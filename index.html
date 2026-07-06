@@ -1,0 +1,2151 @@
+<!DOCTYPE html>
+<!-- ============================================================
+     JAYESH BHADE — fullstack engineer, real-time systems
+     ............................................................
+     You're reading the source. Good instinct.
+     Everything here is hand-written in one file: the smoke is an
+     fbm value-noise shader, the particles are a GPU vertex shader
+     lerping 40k points into a word, and the site profiles itself
+     and sheds load on weaker devices (see PERF, ~line 900).
+     Press ~ on the site for a terminal. Konami code for debug.
+     jayeshjibhade@gmail.com · github.com/Jaybhade
+     ============================================================ -->
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Jayesh Bhade — Fullstack Engineer · Real-time Systems</title>
+<meta name="description" content="Jayesh Bhade — fullstack engineer specializing in trading-grade frontends: sub-100ms budgets, 0→1 platforms, and the systems behind them.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<!-- fonts load async so a slow font CDN can never block first paint -->
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" media="print" onload="this.media='all'">
+<noscript><link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet"></noscript>
+<style>
+  :root{
+    --bg:#0b0b0a;
+    --bg2:#111110;
+    --ink:#d8d5cc;
+    --ink-strong:#eceae3;
+    --dim:#827f77;
+    --line:rgba(216,213,204,.13);
+    --up:#8ea98a;
+    --down:#ad7469;
+    --mono:'JetBrains Mono', monospace;
+    --sans:'Space Grotesk', sans-serif;
+  }
+  *{margin:0;padding:0;box-sizing:border-box;}
+  html{scroll-behavior:smooth;}
+  html,body{background:var(--bg);color:var(--ink);}
+  body{
+    font-family:var(--sans);font-weight:400;line-height:1.5;
+    overflow-x:hidden;-webkit-font-smoothing:antialiased;cursor:none;
+  }
+  @media (hover:none){ body{cursor:auto;} }
+  ::selection{background:var(--ink);color:var(--bg);}
+  a{color:inherit;text-decoration:none;cursor:none;}
+  @media (hover:none){ a{cursor:pointer;} }
+  button{font-family:inherit;cursor:none;}
+  @media (hover:none){ button{cursor:pointer;} }
+
+  /* blueprint column guides */
+  body::before{
+    content:"";position:fixed;inset:0;z-index:0;pointer-events:none;opacity:.028;
+    background:
+      linear-gradient(90deg, var(--ink) 1px, transparent 1px) 0 0/25% 100%,
+      linear-gradient(var(--ink) 1px, transparent 1px) 0 0/100% 25vh;
+  }
+
+  /* ---------- grain ---------- */
+  .grain{
+    position:fixed;inset:-50%;width:200%;height:200%;
+    pointer-events:none;z-index:60;opacity:.05;
+    background-image:url("data:image/svg+xml,%3Csvg viewBox='0 0 250 250' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.7' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+    animation:grain 8s steps(10) infinite;
+  }
+  @keyframes grain{
+    0%,100%{transform:translate(0,0)} 10%{transform:translate(-5%,-10%)}
+    20%{transform:translate(-15%,5%)} 30%{transform:translate(7%,-25%)}
+    40%{transform:translate(-5%,25%)} 50%{transform:translate(-15%,10%)}
+    60%{transform:translate(15%,0%)} 70%{transform:translate(0%,15%)}
+    80%{transform:translate(3%,25%)} 90%{transform:translate(-10%,10%)}
+  }
+
+  /* ---------- cursor ---------- */
+  .cursor{
+    position:fixed;top:0;left:0;z-index:100;pointer-events:none;
+    width:8px;height:8px;border-radius:50%;background:var(--ink-strong);
+    transform:translate(-50%,-50%);
+    transition:width .25s,height .25s,opacity .25s;
+    mix-blend-mode:difference;
+  }
+  .cursor.is-hover{width:44px;height:44px;opacity:.9;}
+  @media (hover:none){ .cursor{display:none;} }
+
+  /* ---------- preloader ---------- */
+  .loader{
+    position:fixed;inset:0;z-index:90;background:var(--bg);
+    display:flex;align-items:flex-end;justify-content:space-between;
+    padding:28px 32px;
+  }
+  .loader__pct{
+    font-family:var(--mono);font-size:clamp(60px,14vw,180px);
+    line-height:.85;color:var(--ink-strong);font-weight:500;letter-spacing:-.04em;
+  }
+  .loader__label{
+    font-family:var(--mono);font-size:11px;letter-spacing:.18em;
+    text-transform:uppercase;color:var(--dim);padding-bottom:12px;
+  }
+
+  /* ---------- nav ---------- */
+  nav{
+    position:fixed;top:0;left:0;right:0;z-index:50;
+    display:flex;align-items:center;justify-content:space-between;
+    padding:22px 32px;mix-blend-mode:difference;
+  }
+  .nav__logo{font-weight:700;font-size:17px;letter-spacing:-.02em;color:#fff;}
+  .nav__logo sup{font-weight:400;font-size:9px;}
+  .nav__links{display:flex;gap:26px;font-size:14px;color:#fff;align-items:center;}
+  .nav__links a{opacity:.75;transition:opacity .2s;}
+  .nav__links a:hover{opacity:1;}
+  .nav__links .mono-toggle{
+    font-family:var(--mono);font-size:10px;letter-spacing:.14em;text-transform:uppercase;
+    border:1px solid rgba(255,255,255,.3);border-radius:2px;padding:5px 9px;opacity:.75;
+  }
+  .nav__cta{
+    font-size:13px;font-weight:500;color:#fff;
+    border:1px solid rgba(255,255,255,.4);padding:9px 16px;border-radius:2px;
+    transition:background .25s,color .25s;
+  }
+  .nav__cta:hover{background:#fff;color:#000;}
+  @media(max-width:900px){ .nav__links{display:none;} }
+
+  /* ---------- perf HUD ---------- */
+  .perf-hud{
+    position:fixed;right:32px;bottom:76px;z-index:55;pointer-events:none;
+    display:flex;flex-direction:column;gap:3px;text-align:right;
+    font-family:var(--mono);font-size:9.5px;letter-spacing:.13em;
+    text-transform:uppercase;color:var(--dim);
+  }
+  .perf-hud b{color:var(--ink-strong);font-weight:500;}
+  .perf-hud .dbg-only{display:none;}
+  body.debug .perf-hud .dbg-only{display:block;}
+  @media(max-width:760px){ .perf-hud{right:20px;bottom:64px;font-size:8.5px;} }
+
+  /* ---------- hero ---------- */
+  .hero{position:relative;height:100svh;overflow:hidden;}
+  #hero-canvas{position:absolute;inset:0;width:100%;height:100%;}
+  .hero__center{
+    position:absolute;inset:0;display:flex;flex-direction:column;
+    align-items:center;justify-content:center;text-align:center;
+    gap:26px;padding:0 24px;z-index:2;
+  }
+  .hero__globe{width:44px;height:auto;opacity:.85;}
+  .hero__globe svg{display:block;width:100%;height:auto;stroke:var(--ink);}
+  .hero__statement{max-width:460px;font-size:clamp(16px,1.6vw,20px);line-height:1.55;color:var(--ink);}
+  .hero__statement + .hero__statement{color:var(--dim);}
+  .hero__bottom{
+    position:absolute;left:0;right:0;bottom:0;z-index:2;
+    display:flex;justify-content:space-between;align-items:flex-end;
+    padding:0 32px 26px;
+    font-family:var(--mono);font-size:11px;letter-spacing:.14em;
+    text-transform:uppercase;color:var(--dim);
+  }
+  .hero__metrics{display:flex;gap:40px;}
+  .hero__metrics b{display:block;color:var(--ink-strong);font-weight:500;font-size:15px;letter-spacing:0;margin-bottom:4px;}
+  .hero__scroll{display:flex;align-items:center;gap:10px;}
+  .hero__scroll::after{
+    content:"";display:block;width:1px;height:36px;background:var(--dim);
+    animation:scrollhint 1.8s ease-in-out infinite;transform-origin:top;
+  }
+  @keyframes scrollhint{0%{transform:scaleY(0)}50%{transform:scaleY(1)}100%{transform:scaleY(0);transform-origin:bottom}}
+  .hero__name{
+    position:absolute;left:0;right:0;bottom:8vh;z-index:1;
+    font-weight:700;text-align:center;
+    font-size:clamp(48px,10.8vw,215px);
+    line-height:.82;letter-spacing:-.03em;
+    color:transparent;
+    -webkit-text-stroke:1px rgba(216,213,204,.22);
+    user-select:none;white-space:nowrap;pointer-events:none;
+  }
+
+  /* ---------- shared section chrome (formal-technical) ---------- */
+  section{position:relative;z-index:1;}
+  .sec-head{
+    position:relative;
+    display:flex;justify-content:space-between;align-items:baseline;
+    padding:26px 32px;border-top:1px solid var(--line);
+    font-family:var(--mono);font-size:11px;letter-spacing:.16em;
+    text-transform:uppercase;color:var(--dim);
+  }
+  .sec-head::before,.sec-head::after{
+    content:"+";position:absolute;top:-7px;font-family:var(--mono);
+    font-size:11px;color:var(--dim);opacity:.9;line-height:1;
+  }
+  .sec-head::before{left:11px;}
+  .sec-head::after{right:11px;}
+  .sec-title{
+    font-family:var(--sans);padding:0 32px;
+    font-size:clamp(38px,6.5vw,110px);
+    font-weight:600;letter-spacing:-.03em;line-height:1.02;color:var(--ink-strong);
+  }
+  .sec-title .thin{font-weight:300;color:var(--dim);}
+
+  /* figure frame — formal technical drawing chrome */
+  .fig{border:1px solid var(--line);border-radius:3px;position:relative;background:rgba(17,17,16,.5);}
+  .fig::before,.fig::after{
+    content:"";position:absolute;width:7px;height:7px;pointer-events:none;
+    border-color:var(--dim);border-style:solid;
+  }
+  .fig::before{top:-1px;left:-1px;border-width:1px 0 0 1px;}
+  .fig::after{bottom:-1px;right:-1px;border-width:0 1px 1px 0;}
+  .fig__head{
+    display:flex;justify-content:space-between;
+    padding:10px 14px;border-bottom:1px solid var(--line);
+    font-family:var(--mono);font-size:9.5px;letter-spacing:.16em;
+    text-transform:uppercase;color:var(--dim);
+  }
+  .fig__body{padding:16px;}
+
+  /* ---------- assembly ---------- */
+  .assembly{position:relative;height:380vh;}
+  .assembly__sticky{position:sticky;top:0;height:100svh;overflow:hidden;display:flex;flex-direction:column;}
+  #assembly-canvas{position:absolute;inset:0;width:100%;height:100%;}
+  .assembly__ui{
+    position:relative;z-index:2;flex:1;display:flex;flex-direction:column;
+    justify-content:space-between;padding:96px 32px 26px;pointer-events:none;
+  }
+  .assembly__copy{max-width:470px;}
+  .assembly__copy h2{
+    font-size:clamp(26px,3.4vw,44px);font-weight:600;
+    letter-spacing:-.02em;line-height:1.1;color:var(--ink-strong);margin-bottom:14px;
+  }
+  .assembly__copy p{color:var(--dim);font-size:15px;max-width:400px;}
+  .assembly__hud{
+    display:flex;justify-content:space-between;align-items:flex-end;
+    font-family:var(--mono);font-size:11px;letter-spacing:.14em;
+    text-transform:uppercase;color:var(--dim);
+  }
+  .assembly__hud .val{color:var(--ink-strong);}
+
+  /* ---------- geometry ---------- */
+  .geometry{position:relative;}
+  .geometry__grid{display:grid;grid-template-columns:minmax(0,5fr) minmax(0,7fr);align-items:start;}
+  .geometry__text{padding:8vh 0 12vh;}
+  .geo-block{padding:7vh 32px;max-width:560px;}
+  .geo-block h3{
+    font-family:var(--mono);font-size:11px;font-weight:500;
+    letter-spacing:.18em;text-transform:uppercase;color:var(--dim);margin-bottom:18px;
+  }
+  .geo-block p{color:var(--ink);font-size:15.5px;line-height:1.65;margin-bottom:14px;}
+  .geo-block p em{color:var(--dim);font-style:normal;}
+  .geo-block .math{
+    font-family:var(--mono);font-size:13.5px;line-height:2;
+    color:var(--ink-strong);background:var(--bg2);
+    border:1px solid var(--line);border-radius:3px;
+    padding:18px 20px;margin:18px 0;overflow-x:auto;white-space:pre;
+  }
+  .geo-block .math .c{color:var(--dim);}
+  .geometry__stage{position:sticky;top:0;height:100svh;overflow:hidden;}
+  #geo-canvas{position:absolute;inset:0;width:100%;height:100%;}
+  .geo__readout{
+    position:absolute;left:28px;bottom:24px;z-index:2;
+    font-family:var(--mono);font-size:11.5px;line-height:1.9;
+    letter-spacing:.06em;color:var(--dim);
+  }
+  .geo__readout span{color:var(--ink-strong);}
+  @media(max-width:1024px){
+    .geometry__grid{grid-template-columns:1fr;}
+    .geometry__text{padding:0 0 8vh;}
+    .geometry__stage{position:relative;height:64svh;order:-1;}
+  }
+
+  /* ---------- proof ---------- */
+  .proof__grid{
+    display:grid;grid-template-columns:1fr 1fr;gap:28px;
+    padding:8vh 32px 12vh;align-items:start;
+  }
+  .proof__label{
+    font-family:var(--mono);font-size:11px;letter-spacing:.14em;
+    text-transform:uppercase;color:var(--dim);margin-bottom:14px;
+  }
+  .proof__note{color:var(--dim);font-size:13.5px;max-width:520px;margin-top:14px;line-height:1.6;}
+  .race{display:grid;grid-template-columns:1fr 1fr;gap:14px;}
+  .race__head{
+    display:flex;justify-content:space-between;align-items:baseline;
+    font-family:var(--mono);font-size:10px;letter-spacing:.14em;
+    text-transform:uppercase;color:var(--ink);margin-bottom:10px;
+  }
+  .race__head span{color:var(--dim);}
+  .race__screen{
+    position:relative;height:190px;border:1px solid var(--line);border-radius:4px;
+    background:var(--bg2);overflow:hidden;padding:14px;
+  }
+  .race__sk{display:flex;flex-direction:column;gap:10px;opacity:0;transition:opacity .2s;}
+  .race__sk i{
+    display:block;height:14px;border-radius:2px;
+    background:linear-gradient(100deg, rgba(216,213,204,.06) 30%, rgba(216,213,204,.14) 50%, rgba(216,213,204,.06) 70%);
+    background-size:200% 100%;animation:shimmer 1.1s linear infinite;
+  }
+  @keyframes shimmer{to{background-position:-200% 0;}}
+  .race__sk i:nth-child(1){width:45%;}
+  .race__sk i:nth-child(2){width:85%;height:52px;}
+  .race__sk i:nth-child(3){width:70%;}
+  .race__sk i:nth-child(4){width:55%;}
+  .race__app{
+    position:absolute;inset:0;display:flex;flex-direction:column;
+    align-items:center;justify-content:center;gap:6px;opacity:0;transition:opacity .35s;
+  }
+  .race__app b{font-size:19px;font-weight:600;color:var(--ink-strong);letter-spacing:-.02em;}
+  .race__app span{font-family:var(--mono);font-size:10px;letter-spacing:.16em;text-transform:uppercase;color:var(--up);}
+  .race__screen.is-loading .race__sk{opacity:1;}
+  .race__screen.is-done .race__app{opacity:1;}
+  .race__ms{
+    margin-top:10px;font-family:var(--mono);font-size:22px;font-weight:500;
+    color:var(--ink-strong);letter-spacing:-.02em;
+  }
+  .race__ms span{font-size:11px;color:var(--dim);letter-spacing:.1em;}
+  .proof__btn{
+    margin-top:18px;background:none;border:1px solid var(--line);border-radius:2px;
+    color:var(--ink-strong);font-family:var(--mono);font-size:11px;
+    letter-spacing:.16em;text-transform:uppercase;padding:12px 20px;
+    transition:background .25s,color .25s;
+  }
+  .proof__btn:hover{background:var(--ink-strong);color:var(--bg);}
+  /* 915 widget workspace — everything is a draggable surface */
+  .ws__area{
+    position:relative;height:430px;overflow:hidden;touch-action:none;
+    background-image:radial-gradient(rgba(216,213,204,.09) 1px, transparent 1px);
+    background-size:22px 22px;
+  }
+  .widget{
+    position:absolute;display:flex;flex-direction:column;
+    background:rgba(14,14,13,.96);border:1px solid var(--line);border-radius:4px;
+    box-shadow:0 12px 34px rgba(0,0,0,.45);overflow:hidden;
+  }
+  .widget__bar{
+    display:flex;justify-content:space-between;align-items:center;gap:8px;
+    padding:7px 10px;border-bottom:1px solid var(--line);
+    font-family:var(--mono);font-size:9px;letter-spacing:.13em;
+    text-transform:uppercase;color:var(--dim);
+    cursor:grab;user-select:none;background:rgba(216,213,204,.03);
+  }
+  .widget__bar:active{cursor:grabbing;}
+  .widget__bar b{color:var(--ink-strong);font-weight:500;font-size:10px;letter-spacing:.02em;}
+  .widget__bar .up{color:var(--up);}
+  .widget__bar .down{color:var(--down);}
+  .widget canvas{display:block;flex:1;width:100%;min-height:0;}
+  .widget.is-drag{border-color:rgba(216,213,204,.4);}
+
+  /* journey builder — react-flow style node canvas */
+  .proof__flow{padding:0 32px 12vh;}
+  .flow{
+    position:relative;height:430px;overflow:hidden;touch-action:none;
+    background-image:radial-gradient(rgba(216,213,204,.09) 1px, transparent 1px);
+    background-size:22px 22px;
+  }
+  .flow svg{position:absolute;inset:0;width:100%;height:100%;pointer-events:none;}
+  .flow svg path{fill:none;stroke:rgba(216,213,204,.35);stroke-width:1.2;stroke-dasharray:5 4;animation:flowdash 1.2s linear infinite;}
+  .flow svg text{font-family:var(--mono);font-size:8.5px;fill:var(--dim);letter-spacing:.08em;text-transform:uppercase;}
+  .flow svg circle.pulse{fill:var(--ink-strong);}
+  @keyframes flowdash{to{stroke-dashoffset:-9;}}
+  @media (prefers-reduced-motion: reduce){ .flow svg path{animation:none;} }
+  .jb-node{
+    position:absolute;width:158px;
+    background:rgba(14,14,13,.97);border:1px solid var(--line);border-radius:4px;
+    box-shadow:0 10px 28px rgba(0,0,0,.45);user-select:none;cursor:grab;
+  }
+  .jb-node:active{cursor:grabbing;}
+  .jb-node.is-drag{border-color:rgba(216,213,204,.45);}
+  .jb-node__type{
+    display:flex;align-items:center;gap:7px;
+    padding:7px 10px;border-bottom:1px solid var(--line);
+    font-family:var(--mono);font-size:8.5px;letter-spacing:.14em;
+    text-transform:uppercase;color:var(--dim);background:rgba(216,213,204,.03);
+  }
+  .jb-node__type i{width:6px;height:6px;border-radius:50%;display:block;}
+  .jb-node__body{padding:9px 10px;font-family:var(--mono);font-size:10.5px;color:var(--ink);line-height:1.5;}
+  .jb-node__body small{display:block;color:var(--dim);font-size:9px;letter-spacing:.06em;}
+  .jb-node .port{position:absolute;width:7px;height:7px;border-radius:50%;background:var(--bg);border:1px solid var(--dim);top:50%;margin-top:-4px;}
+  .jb-node .port--in{left:-4px;}
+  .jb-node .port--out{right:-4px;}
+  .dot-http{background:#8ea98a;} .dot-display{background:#c6c2b8;}
+  .dot-switch{background:#b39d6b;} .dot-input{background:#8ca3b8;}
+  .dot-trigger{background:#ad7469;}
+
+  @media(max-width:900px){
+    .proof__grid{grid-template-columns:1fr;gap:40px;}
+    .ws__area{height:380px;}
+    .proof__flow{padding:0 20px 10vh;}
+    .flow{height:480px;}
+    .jb-node{width:132px;}
+  }
+
+  /* ---------- projects ---------- */
+  .projects__wrap{padding:8vh 32px 12vh;display:grid;gap:28px;}
+  .proj{
+    border:1px solid var(--line);border-radius:4px;background:rgba(17,17,16,.55);
+    padding:34px;position:relative;
+  }
+  .proj__tag{
+    position:absolute;top:-9px;left:22px;background:var(--bg);
+    font-family:var(--mono);font-size:9.5px;letter-spacing:.18em;
+    text-transform:uppercase;color:var(--dim);padding:2px 10px;
+  }
+  .proj--featured{display:grid;grid-template-columns:minmax(0,5fr) minmax(0,6fr);gap:40px;}
+  .proj h3{font-size:clamp(24px,2.6vw,36px);font-weight:600;letter-spacing:-.02em;color:var(--ink-strong);line-height:1.12;}
+  .proj h3 span{font-weight:300;color:var(--dim);}
+  .proj__sub{font-family:var(--mono);font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--dim);margin:10px 0 18px;}
+  .proj p{color:var(--dim);font-size:14.5px;line-height:1.65;margin-bottom:12px;}
+  .proj p b{color:var(--ink);font-weight:500;}
+  .proj ul{list-style:none;margin:16px 0;}
+  .proj ul li{
+    position:relative;padding:10px 0 10px 22px;color:var(--dim);
+    font-size:14px;line-height:1.6;border-top:1px solid var(--line);
+  }
+  .proj ul li::before{content:"—";position:absolute;left:0;color:var(--dim);font-family:var(--mono);}
+  .proj ul li b{color:var(--ink);font-weight:500;}
+  .proj__links{display:flex;gap:18px;margin-top:18px;}
+  .proj__links a{
+    font-family:var(--mono);font-size:11px;letter-spacing:.14em;text-transform:uppercase;
+    color:var(--ink-strong);border-bottom:1px solid var(--dim);padding-bottom:3px;
+  }
+  .proj__links a:hover{border-color:var(--ink-strong);}
+  .schematic svg{display:block;width:100%;height:auto;}
+  .schematic text{font-family:var(--mono);fill:var(--dim);}
+  .schematic .t-strong{fill:var(--ink-strong);}
+  .schematic rect,.schematic path,.schematic line{stroke:rgba(216,213,204,.35);fill:none;stroke-width:1;}
+  .schematic .box{fill:rgba(17,17,16,.9);}
+  .schematic .dash{stroke-dasharray:4 4;stroke:rgba(216,213,204,.22);}
+  .proj__row{display:grid;grid-template-columns:repeat(3,1fr);gap:28px;}
+  .proj--small h3{font-size:19px;}
+  .proj--small .proj__sub{margin-bottom:12px;}
+  .proj--small p{font-size:13.5px;}
+  @media(max-width:1024px){
+    .proj--featured{grid-template-columns:1fr;}
+    .proj__row{grid-template-columns:1fr;}
+  }
+
+  /* ---------- stack ---------- */
+  .spec{margin:8vh 32px 12vh;border:1px solid var(--line);border-radius:4px;overflow:hidden;}
+  .spec__row{
+    display:grid;grid-template-columns:230px 1fr;
+    border-top:1px solid var(--line);
+  }
+  .spec__row:first-child{border-top:none;}
+  .spec__k{
+    padding:22px 24px;font-family:var(--mono);font-size:10.5px;
+    letter-spacing:.16em;text-transform:uppercase;color:var(--dim);
+    border-right:1px solid var(--line);background:rgba(17,17,16,.5);
+  }
+  .spec__v{padding:18px 24px;display:flex;flex-wrap:wrap;gap:8px 6px;align-items:center;}
+  .spec__v span{
+    font-size:14px;color:var(--ink);padding:4px 0;
+  }
+  .spec__v span::after{content:"·";color:var(--dim);margin:0 8px;}
+  .spec__v span:last-child::after{content:"";}
+  .spec__v .lead{color:var(--ink-strong);font-weight:500;}
+  @media(max-width:760px){
+    .spec__row{grid-template-columns:1fr;}
+    .spec__k{border-right:none;border-bottom:1px solid var(--line);padding:14px 20px;}
+    .spec__v{padding:14px 20px;}
+  }
+
+  /* ---------- ai workflows ---------- */
+  .aiwf__intro{max-width:640px;padding:5vh 32px 0;color:var(--dim);font-size:15.5px;line-height:1.65;}
+  .aiwf__intro b{color:var(--ink);font-weight:500;}
+  .aiwf__pipeline{
+    display:flex;flex-wrap:wrap;align-items:center;gap:10px 8px;
+    padding:4vh 32px 0;
+    font-family:var(--mono);font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;
+  }
+  .aiwf__pipeline span{
+    border:1px solid var(--line);border-radius:2px;padding:7px 12px;color:var(--ink-strong);
+    background:rgba(17,17,16,.6);
+  }
+  .aiwf__pipeline i{color:var(--dim);font-style:normal;}
+  .aiwf__grid{display:grid;grid-template-columns:1fr 1fr;gap:28px;padding:6vh 32px 12vh;align-items:start;}
+  .aiwf__panel .fig__body{padding:0;}
+  .skillrow{
+    display:grid;grid-template-columns:190px 1fr;gap:14px;
+    padding:14px 16px;border-top:1px solid var(--line);
+    transition:background .2s;
+  }
+  .skillrow:first-child{border-top:none;}
+  .skillrow:hover{background:rgba(216,213,204,.04);}
+  .skillrow code{
+    font-family:var(--mono);font-size:11.5px;color:var(--ink-strong);letter-spacing:.02em;
+  }
+  .skillrow p{font-size:13px;color:var(--dim);line-height:1.55;margin:0;}
+  .aiwf__src{
+    padding:14px 16px;border-top:1px solid var(--line);
+    font-family:var(--mono);font-size:9.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--dim);
+  }
+  .aiwf__src a{color:var(--ink);border-bottom:1px solid var(--dim);padding-bottom:1px;}
+  .aiwf__src a:hover{color:var(--ink-strong);}
+  @media(max-width:1024px){ .aiwf__grid{grid-template-columns:1fr;} }
+  @media(max-width:760px){
+    .aiwf__intro,.aiwf__pipeline{padding-left:20px;padding-right:20px;}
+    .aiwf__grid{padding:5vh 20px 10vh;}
+    .skillrow{grid-template-columns:1fr;gap:5px;}
+  }
+
+  /* ---------- journey ---------- */
+  .journey{position:relative;padding-bottom:16vh;}
+  .journey__list{position:relative;margin-top:9vh;}
+  .journey__line{position:absolute;left:32px;top:0;bottom:0;width:1px;background:var(--line);}
+  .journey__line i{
+    position:absolute;left:0;top:0;width:100%;height:100%;
+    background:var(--ink);transform:scaleY(0);transform-origin:top;display:block;
+  }
+  .j-item{
+    position:relative;display:grid;grid-template-columns:220px 1fr;gap:32px;
+    padding:52px 32px 52px 76px;border-bottom:1px solid var(--line);
+  }
+  .j-item::before{
+    content:"";position:absolute;left:28px;top:64px;width:9px;height:9px;border-radius:50%;
+    background:var(--bg);border:1px solid var(--ink);
+  }
+  .j-item__meta{font-family:var(--mono);font-size:11.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--dim);line-height:2;}
+  .j-item__meta b{display:block;color:var(--ink-strong);font-weight:500;font-size:13px;}
+  .j-item h3{
+    font-size:clamp(22px,2.6vw,34px);font-weight:600;
+    letter-spacing:-.02em;color:var(--ink-strong);margin-bottom:14px;line-height:1.15;
+  }
+  .j-item p{color:var(--dim);font-size:15px;max-width:640px;margin-bottom:10px;}
+  .j-item p b{color:var(--ink);font-weight:500;}
+  .j-item__tags{display:flex;flex-wrap:wrap;gap:8px;margin-top:16px;}
+  .j-item__tags span{
+    font-family:var(--mono);font-size:10.5px;letter-spacing:.1em;
+    text-transform:uppercase;color:var(--dim);
+    border:1px solid var(--line);border-radius:20px;padding:5px 12px;
+  }
+
+  /* ---------- terminal ---------- */
+  .terminal{
+    position:fixed;inset:0;z-index:80;display:flex;align-items:center;justify-content:center;
+    background:rgba(5,5,4,.6);backdrop-filter:blur(6px);
+  }
+  .terminal[hidden]{display:none;}
+  .terminal__win{
+    width:min(720px, 94vw);height:min(460px, 80vh);display:flex;flex-direction:column;
+    background:#0d0d0c;border:1px solid var(--line);border-radius:6px;
+    box-shadow:0 30px 80px rgba(0,0,0,.6);overflow:hidden;
+  }
+  .terminal__bar{
+    display:flex;justify-content:space-between;align-items:center;
+    padding:10px 14px;border-bottom:1px solid var(--line);
+    font-family:var(--mono);font-size:10.5px;letter-spacing:.14em;
+    text-transform:uppercase;color:var(--dim);
+  }
+  .terminal__bar button{background:none;border:none;color:var(--dim);font-size:13px;}
+  .terminal__bar button:hover{color:var(--ink-strong);}
+  .terminal__body{
+    flex:1;overflow-y:auto;padding:14px 16px;
+    font-family:var(--mono);font-size:12.5px;line-height:1.75;color:var(--ink);
+    white-space:pre-wrap;word-break:break-word;
+  }
+  .terminal__body .dim{color:var(--dim);}
+  .terminal__body .ok{color:var(--up);}
+  .terminal__inputrow{
+    display:flex;gap:10px;padding:12px 16px;border-top:1px solid var(--line);
+    font-family:var(--mono);font-size:12.5px;
+  }
+  .terminal__ps1{color:var(--up);white-space:nowrap;}
+  #term-in{
+    flex:1;background:none;border:none;outline:none;color:var(--ink-strong);
+    font-family:var(--mono);font-size:12.5px;caret-color:var(--ink-strong);
+  }
+
+  /* ---------- debug mode ---------- */
+  body.debug [data-dbg]{outline:1px dashed rgba(219,140,110,.55);outline-offset:-1px;}
+  body.debug [data-dbg]::after{
+    content:attr(data-dbg);position:absolute;top:6px;left:6px;z-index:40;
+    font-family:var(--mono);font-size:9px;letter-spacing:.14em;text-transform:uppercase;
+    color:#dba18c;background:rgba(11,11,10,.85);border:1px solid rgba(219,140,110,.4);
+    padding:3px 8px;border-radius:2px;pointer-events:none;
+  }
+  body.debug canvas{outline:1px solid rgba(140,170,219,.35);outline-offset:-2px;}
+
+  /* ---------- footer ---------- */
+  footer{
+    position:relative;overflow:hidden;border-top:1px solid var(--line);
+    display:flex;flex-direction:column;min-height:100svh;z-index:1;
+  }
+  #footer-canvas{position:absolute;inset:0;width:100%;height:100%;opacity:.6;}
+  footer.no-field #footer-canvas{display:none;}
+  footer.no-field{background:radial-gradient(120% 90% at 50% 100%, #191916 0%, var(--bg) 60%);}
+  .footer__top{
+    position:relative;z-index:2;flex:1;display:flex;flex-direction:column;
+    align-items:center;justify-content:center;gap:26px;text-align:center;
+    padding:120px 24px 40px;
+  }
+  .footer__globe{width:40px;opacity:.85;}
+  .footer__globe svg{display:block;width:100%;height:auto;stroke:var(--ink);}
+  .footer__statement{max-width:460px;font-size:clamp(16px,1.6vw,20px);line-height:1.55;}
+  .footer__statement + .footer__statement{color:var(--dim);}
+  .footer__cta{
+    margin-top:10px;font-size:14px;font-weight:500;
+    background:var(--ink-strong);color:#0a0a09;
+    padding:14px 26px;border-radius:2px;display:inline-flex;gap:10px;align-items:center;
+    transition:transform .3s cubic-bezier(.22,1,.36,1);
+  }
+  .footer__cta:hover{transform:translateY(-3px);}
+  .footer__meta{
+    position:relative;z-index:2;display:flex;justify-content:space-between;
+    flex-wrap:wrap;gap:14px;padding:0 32px 18px;
+    font-family:var(--mono);font-size:11px;letter-spacing:.14em;
+    text-transform:uppercase;color:var(--dim);
+  }
+  .footer__meta a:hover{color:var(--ink-strong);}
+  .footer__meta .links{display:flex;gap:22px;}
+  .footer__name{
+    position:relative;z-index:2;display:flex;justify-content:center;align-items:flex-end;
+    padding:0 8px;user-select:none;line-height:.82;transform:translateY(4%);
+    text-align:center;
+  }
+  .footer__name span{
+    font-weight:600;letter-spacing:-.025em;white-space:nowrap;
+    font-size:clamp(40px,10.4vw,210px);color:#c6c2b8;display:inline-block;
+  }
+  @media(max-width:760px){
+    .footer__name span{white-space:normal;font-size:17vw;line-height:.9;}
+  }
+
+  /* ---------- responsive: tablet ---------- */
+  @media(max-width:1024px){
+    .hero__metrics{gap:26px;}
+    .j-item{grid-template-columns:170px 1fr;gap:24px;}
+  }
+  /* ---------- responsive: mobile ---------- */
+  @media(max-width:760px){
+    nav{padding:16px 20px;}
+    .nav__cta{padding:8px 12px;font-size:12px;}
+    .loader{padding:20px;}
+    .hero__center{gap:20px;}
+    .hero__statement{font-size:15px;max-width:340px;}
+    .hero__name{font-size:19vw;bottom:14vh;white-space:normal;line-height:.88;}
+    .hero__bottom{flex-direction:column;align-items:flex-start;gap:16px;padding:0 20px 18px;}
+    .hero__metrics{flex-wrap:wrap;gap:16px 22px;}
+    .hero__metrics b{font-size:13px;}
+    .hero__scroll{display:none;}
+    .sec-head{padding:20px;}
+    .sec-title{padding-left:20px;padding-right:20px;}
+    .assembly__ui{padding:76px 20px 18px;}
+    .assembly__copy h2{max-width:330px;font-size:24px;}
+    .assembly__copy p{font-size:13.5px;max-width:300px;}
+    .assembly__hud{flex-wrap:wrap;gap:8px 18px;}
+    .geo-block{padding:5vh 20px;}
+    .geo-block .math{font-size:11.5px;padding:14px;line-height:1.9;}
+    .geo__readout{left:20px;bottom:16px;font-size:10px;}
+    .proof__grid{padding:6vh 20px 10vh;}
+    .race{grid-template-columns:1fr 1fr;gap:10px;}
+    .race__screen{height:150px;}
+    .projects__wrap{padding:6vh 20px 10vh;}
+    .proj{padding:24px 20px;}
+    .spec{margin:6vh 20px 10vh;}
+    .journey__line{left:24px;}
+    .j-item{grid-template-columns:1fr;gap:12px;padding:40px 20px 40px 56px;}
+    .j-item::before{left:20px;top:52px;}
+    .footer__top{padding:100px 20px 32px;gap:20px;}
+    .footer__statement{font-size:15px;max-width:340px;}
+    .footer__meta{flex-direction:column;align-items:center;gap:10px;padding:0 20px 14px;text-align:center;}
+    .footer__name span{letter-spacing:-.03em;}
+  }
+  @media(max-width:400px){
+    .nav__logo{font-size:15px;}
+  }
+  @media (prefers-reduced-motion: reduce){
+    html{scroll-behavior:auto;}
+    .grain,.hero__scroll::after,.race__sk i{animation:none;}
+  }
+</style>
+</head>
+<body>
+
+<div class="grain"></div>
+<div class="cursor" id="cursor"></div>
+
+<div class="loader" id="loader">
+  <div class="loader__label">Jayesh Bhade — Portfolio<br>Profiling device · compiling shaders</div>
+  <div class="loader__pct" id="loader-pct">0</div>
+</div>
+
+<nav>
+  <a class="nav__logo" href="#top">JB<sup>©</sup></a>
+  <div class="nav__links">
+    <a href="#proof">Proof</a>
+    <a href="#projects">Work</a>
+    <a href="#stack">Stack</a>
+    <a href="#ai">AI</a>
+    <a href="#journey">Journey</a>
+    <a href="#" class="mono-toggle" id="dither-toggle">Dither: off</a>
+  </div>
+  <a class="nav__cta" href="mailto:jayeshjibhade@gmail.com">Start a project ↗</a>
+</nav>
+
+<!-- live renderer telemetry — this page profiles itself -->
+<div class="perf-hud" id="perf-hud">
+  <span>FPS <b id="ph-fps">--</b></span>
+  <span>FRAME <b id="ph-ms">--</b> MS</span>
+  <span>DRAW <b id="ph-calls">--</b></span>
+  <span>HEAP <b id="ph-mem">--</b></span>
+  <span>TIER <b id="ph-tier">--</b></span>
+  <span class="dbg-only">DPR <b id="ph-dpr">--</b></span>
+  <span class="dbg-only" style="max-width:180px;overflow:hidden;text-overflow:ellipsis;">GPU <b id="ph-gpu">--</b></span>
+</div>
+
+<!-- ================= HERO ================= -->
+<header class="hero" id="top" data-dbg="hero — fbm smoke shader + post fx">
+  <canvas id="hero-canvas"></canvas>
+  <div class="hero__center">
+    <div class="hero__globe">
+      <svg viewBox="0 0 44 28" fill="none" stroke-width="1">
+        <ellipse cx="22" cy="14" rx="21" ry="13"/>
+        <ellipse cx="22" cy="14" rx="10" ry="13"/>
+        <line x1="1" y1="14" x2="43" y2="14"/>
+        <path d="M3.5 7.5 C10 11, 34 11, 40.5 7.5"/>
+        <path d="M3.5 20.5 C10 17, 34 17, 40.5 20.5"/>
+      </svg>
+    </div>
+    <p class="hero__statement">I architect and ship real-time systems — from the socket to the pixel.</p>
+    <p class="hero__statement">Fullstack engineer, weighted to the front. Trading-grade interfaces, sub-100ms budgets, platforms owned 0→1.</p>
+  </div>
+  <div class="hero__name">JAYESH BHADE</div>
+  <div class="hero__bottom">
+    <div class="hero__metrics">
+      <div><b>≤100ms</b>P90 webview load</div>
+      <div><b>5M+</b>conversations served</div>
+      <div><b>0→1 ×4</b>platforms shipped</div>
+    </div>
+    <div class="hero__scroll">Scroll</div>
+  </div>
+</header>
+
+<!-- ================= 01 SYSTEMS ================= -->
+<section class="assembly" id="assembly" data-dbg="assembly — gpu particles, curl flow, mouse repel">
+  <div class="assembly__sticky">
+    <canvas id="assembly-canvas"></canvas>
+    <div class="assembly__ui">
+      <div class="sec-head" style="border:none;padding-left:0;padding-right:0;">
+        <span>01 — Systems</span><span>FIG. 01 · N-body convergence</span>
+      </div>
+      <div class="assembly__copy">
+        <h2>Architecture is deciding<br>where every part belongs.</h2>
+        <p>A support platform is 30+ components, a socket layer, retry queues and a decision-tree engine. The discipline is making thousands of parts read as one system — move your cursor through the field; every particle knows its place and returns to it.</p>
+      </div>
+      <div class="assembly__hud">
+        <span><span class="val" id="hud-count">—</span> particles</span>
+        <span>convergence <span class="val" id="hud-progress">0.00</span></span>
+        <span id="hud-state" class="val">SCATTERED</span>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= 02 GEOMETRY ================= -->
+<section class="geometry" id="geometry" data-dbg="geometry — parametric torus knot">
+  <div class="sec-head"><span>02 — Geometry</span><span>FIG. 02 · the math behind the motion</span></div>
+  <h2 class="sec-title" style="padding-bottom:4vh;">Animation is just<br><span class="thin">arithmetic on a clock.</span></h2>
+  <div class="geometry__grid">
+    <div class="geometry__text">
+      <div class="geo-block">
+        <h3>01 / The claim</h3>
+        <p>On the right, a <b>square wave is being drawn by nothing but rotating circles</b>. That is Fourier's theorem: any periodic signal — an audio buffer, a price series, an animation curve — is a sum of plain sines:</p>
+        <div class="math">f(t) = Σ (4/kπ)·sin(k·t)     <span class="c">// k = 1, 3, 5, …</span>
+
+<span class="c">// one term = one circle:</span>
+<span class="c">//   radius  4/kπ</span>
+<span class="c">//   speed   k rad/s</span></div>
+        <p><em>Each circle rides the tip of the one before it. The endpoint of the chain traces the signal — pure rotation in, geometry out.</em></p>
+      </div>
+      <div class="geo-block">
+        <h3>02 / The transform</h3>
+        <p>Your scroll position sets <b>how many harmonics the chain carries</b>. One circle is a lazy sine; two dozen snap into a square with the characteristic Gibbs ripple at the edges. Analysis is the same trick run backwards:</p>
+        <div class="math">N(u) = 1 + ⌊u·23⌋            <span class="c">// u = scrollProgress</span>
+
+Xₖ = Σₙ xₙ·e^(−i·2πkn/N)     <span class="c">// the DFT</span></div>
+        <p><em>The DFT is the transform behind every audio visualizer — including the real-time pitch wave I shipped for Groww's voice tickets, drawn from the microphone as users speak.</em></p>
+      </div>
+      <div class="geo-block">
+        <h3>03 / The easing</h3>
+        <p>Linear motion reads as mechanical because nothing physical moves linearly. Every transition on this page routes time through an <b>easing function</b> first — a curve that reshapes the clock:</p>
+        <div class="math">easeOutExpo(t) = 1 − 2<sup>−10t</sup>
+
+<span class="c">// fast start, asymptotic landing —</span>
+<span class="c">// the same shape as a price settling</span>
+<span class="c">// after a spike.</span></div>
+        <p><em>Performance engineering is this in reverse: knowing which milliseconds the eye will notice, and spending them deliberately.</em></p>
+      </div>
+    </div>
+    <div class="geometry__stage">
+      <canvas id="geo-canvas"></canvas>
+      <div class="geo__readout">
+        N = <span id="ro-n">1</span> harmonics&nbsp;&nbsp;k<sub>max</sub> = <span id="ro-k">1</span><br>
+        t = <span id="ro-t">0.00</span>s&nbsp;&nbsp;target = square(t)<br>
+        fn = <span>Σ 4/kπ · sin(k·t)</span>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= 03 PROOF ================= -->
+<section class="proof" id="proof" data-dbg="proof — latency race + live chart">
+  <div class="sec-head"><span>03 — Proof</span><span>benchmarks you can run</span></div>
+  <h2 class="sec-title">Speed is a feature.<br><span class="thin">Run it yourself.</span></h2>
+  <div class="proof__grid">
+    <div>
+      <div class="proof__label">// FIG. 03-A — webview cold start: stock vs my native-layer patch</div>
+      <div class="race">
+        <div>
+          <div class="race__head">Stock webview<span>baseline</span></div>
+          <div class="race__screen" id="race-a">
+            <div class="race__sk"><i></i><i></i><i></i><i></i></div>
+            <div class="race__app"><b>groww.in</b><span>● interactive</span></div>
+          </div>
+          <div class="race__ms"><span id="race-a-ms">0</span><span> ms</span></div>
+        </div>
+        <div>
+          <div class="race__head">Preloaded webview<span>my patch</span></div>
+          <div class="race__screen" id="race-b">
+            <div class="race__sk"><i></i><i></i><i></i><i></i></div>
+            <div class="race__app"><b>groww.in</b><span>● interactive</span></div>
+          </div>
+          <div class="race__ms"><span id="race-b-ms">0</span><span> ms</span></div>
+        </div>
+      </div>
+      <button class="proof__btn" id="race-btn">▸ Run benchmark</button>
+      <p class="proof__note">A simulation of the production numbers: Groww's iOS webview went from a 1.8s P90 cold start to ~100ms after I moved preloading into react-native-webview's native layer. Same order of magnitude, felt here.</p>
+    </div>
+    <div>
+      <div class="proof__label">// FIG. 03-B — 915.trade: every surface is a live, draggable widget</div>
+      <div class="fig">
+        <div class="fig__head"><span>915 WORKSPACE · SIM</span><span>drag the widgets</span></div>
+        <div class="ws__area" id="ws-area">
+          <div class="widget" data-drag style="left:3%;top:5%;width:56%;height:56%;">
+            <div class="widget__bar"><span>⠿ NIFTY 50 · 1s</span><b id="wg-nifty">—</b></div>
+            <canvas id="wc-nifty"></canvas>
+          </div>
+          <div class="widget" data-drag style="left:62%;top:12%;width:35%;height:44%;">
+            <div class="widget__bar"><span>⠿ STRADDLE · 24200</span><b id="wg-straddle">—</b></div>
+            <canvas id="wc-straddle"></canvas>
+          </div>
+          <div class="widget" data-drag style="left:24%;top:64%;width:44%;height:32%;">
+            <div class="widget__bar"><span>⠿ SCALPER · TAPE</span><b id="wg-scalper">—</b></div>
+            <canvas id="wc-scalper"></canvas>
+          </div>
+        </div>
+      </div>
+      <p class="proof__note">The 915.trade thesis, reproduced: a pro terminal is not a page, it's a workspace — straddle premiums, scalper tape and index candles as independent live widgets, each draggable, each on its own feed. Tick rates adapt to your device tier.</p>
+    </div>
+  </div>
+
+  <!-- FIG. 03-C — journey builder node canvas -->
+  <div class="proof__flow">
+    <div class="proof__label">// FIG. 03-C — Journey Builder: the graph that runs Groww's support chatbot</div>
+    <div class="fig">
+      <div class="fig__head"><span>JOURNEY BUILDER · CANVAS</span><span>react-flow style — drag nodes, edges follow</span></div>
+      <div class="flow" id="flow">
+        <svg id="flow-svg" aria-hidden="true"></svg>
+        <div class="jb-node" data-node="n1" style="left:2%;top:40%;">
+          <div class="jb-node__type"><i class="dot-trigger"></i>trigger</div>
+          <div class="jb-node__body">user message<small>intent: order_status</small></div>
+          <span class="port port--out"></span>
+        </div>
+        <div class="jb-node" data-node="n2" style="left:20%;top:66%;">
+          <div class="jb-node__type"><i class="dot-input"></i>input</div>
+          <div class="jb-node__body">collect order id<small>validation: regex</small></div>
+          <span class="port port--in"></span><span class="port port--out"></span>
+        </div>
+        <div class="jb-node" data-node="n3" style="left:38%;top:22%;">
+          <div class="jb-node__type"><i class="dot-http"></i>http request</div>
+          <div class="jb-node__body">GET /v1/orders/:id<small>timeout 800ms · retry ×2</small></div>
+          <span class="port port--in"></span><span class="port port--out"></span>
+        </div>
+        <div class="jb-node" data-node="n4" style="left:57%;top:48%;">
+          <div class="jb-node__type"><i class="dot-switch"></i>switch</div>
+          <div class="jb-node__body">order.status<small>3 branches</small></div>
+          <span class="port port--in"></span><span class="port port--out"></span>
+        </div>
+        <div class="jb-node" data-node="n5" style="left:78%;top:14%;">
+          <div class="jb-node__type"><i class="dot-display"></i>display</div>
+          <div class="jb-node__body">order timeline card<small>component: OrderCard</small></div>
+          <span class="port port--in"></span>
+        </div>
+        <div class="jb-node" data-node="n6" style="left:78%;top:70%;">
+          <div class="jb-node__type"><i class="dot-http"></i>http request</div>
+          <div class="jb-node__body">POST /v1/tickets<small>escalate → agent</small></div>
+          <span class="port port--in"></span>
+        </div>
+      </div>
+    </div>
+    <p class="proof__note">A working miniature of the platform I built at Groww: ops compose support journeys from typed nodes — http request, display, switch, input — validated with graph algorithms (cycle detection, reachability) and compiled into the decision tree the chatbot walks. The production canvas, built on React Flow, powers 6 major workflows and 30+ contextual answers across 5M+ conversations.</p>
+  </div>
+</section>
+
+<!-- ================= 04 WORK ================= -->
+<section class="projects" id="projects" data-dbg="projects — selected work">
+  <div class="sec-head"><span>04 — Selected work</span><span>production standards, everywhere</span></div>
+  <h2 class="sec-title">Systems I've<br><span class="thin">designed and owned.</span></h2>
+
+  <div class="projects__wrap">
+    <!-- featured: TheBrain -->
+    <div class="proj proj--featured">
+      <span class="proj__tag">Featured · personal R&D · open source</span>
+      <div>
+        <h3>TheBrain <span>/ MNEMO</span></h3>
+        <div class="proj__sub">A personal memory operating system — TypeScript, end to end</div>
+        <p>Capture a thought and it's acknowledged in <b>&lt;400ms — measured in-process, not asserted</b>. An async encoding pipeline works out what it means; four retrieval doorways bring it back when it matters. Modelled on how human memory actually behaves — including forgetting.</p>
+        <ul>
+          <li><b>Express 5 modular monolith</b> with per-module extraction seams, durable pg-boss queues so a write never blocks on a model call, and a model router with per-user budget caps and cost telemetry.</li>
+          <li><b>One Postgres doing the work of four systems</b> — pgvector HNSW for semantic recall, FTS + pg_trgm for keyword, B-tree ranges for temporal, entity/edge tables walked by recursive CTEs for graph.</li>
+          <li><b>Memory "heat"</b> — exp(−λ·Δt) · log(1+freq) · salience, per-type half-lives — drives five storage tiers with hysteresis. Recall re-warms; nothing is ever deleted.</li>
+          <li><b>Privacy as architecture</b> — user isolation enforced at compile time; private memories structurally cannot reach a third-party model. Every AI provider has a deterministic fake: dev and CI run fully offline.</li>
+        </ul>
+        <p><em style="color:var(--dim)">8 accepted ADRs · Turborepo · Next.js 16 admin · Expo 56 voice-first capture · Phase 1 in flight</em></p>
+        <div class="proj__links">
+          <a href="https://github.com/Jaybhade/TheBrain" target="_blank" rel="noopener">github.com/Jaybhade/TheBrain ↗</a>
+        </div>
+      </div>
+      <div class="fig schematic">
+        <div class="fig__head"><span>FIG. 04-A</span><span>MNEMO — write / read path</span></div>
+        <div class="fig__body">
+          <svg viewBox="0 0 680 410" xmlns="http://www.w3.org/2000/svg" aria-label="TheBrain architecture schematic">
+            <defs>
+              <marker id="arr" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto">
+                <path d="M0,0 L8,4 L0,8" fill="none" stroke="rgba(216,213,204,.5)" stroke-width="1"/>
+              </marker>
+            </defs>
+            <!-- capture column -->
+            <rect class="box" x="24" y="36" width="132" height="46" rx="2"/>
+            <text x="36" y="55" font-size="10" class="t-strong">CAPTURE</text>
+            <text x="36" y="70" font-size="8.5">202 ack &lt; 400ms p95</text>
+            <rect class="box" x="24" y="140" width="132" height="46" rx="2"/>
+            <text x="36" y="159" font-size="10" class="t-strong">QUEUE</text>
+            <text x="36" y="174" font-size="8.5">pg-boss · durable</text>
+            <rect class="box" x="24" y="244" width="132" height="46" rx="2"/>
+            <text x="36" y="263" font-size="10" class="t-strong">ENCODER</text>
+            <text x="36" y="278" font-size="8.5">gate·summarize·embed</text>
+            <!-- store -->
+            <rect class="box" x="252" y="140" width="168" height="70" rx="2"/>
+            <text x="264" y="161" font-size="10" class="t-strong">MEMORY STORE</text>
+            <text x="264" y="176" font-size="8.5">Postgres + pgvector</text>
+            <text x="264" y="190" font-size="8.5">HNSW · FTS · trgm · edges</text>
+            <rect class="box" x="252" y="268" width="168" height="46" rx="2"/>
+            <text x="264" y="287" font-size="10" class="t-strong">HEAT ENGINE</text>
+            <text x="264" y="302" font-size="8.5">5 tiers · hysteresis · decay</text>
+            <!-- doorways -->
+            <rect class="dash" x="488" y="36" width="168" height="216" rx="2"/>
+            <text x="500" y="56" font-size="9">RETRIEVAL DOORWAYS</text>
+            <rect class="box" x="504" y="72" width="136" height="34" rx="2"/>
+            <text x="516" y="93" font-size="9.5" class="t-strong">VECTOR · cosine</text>
+            <rect class="box" x="504" y="114" width="136" height="34" rx="2"/>
+            <text x="516" y="135" font-size="9.5" class="t-strong">KEYWORD · fts</text>
+            <rect class="box" x="504" y="156" width="136" height="34" rx="2"/>
+            <text x="516" y="177" font-size="9.5" class="t-strong">TEMPORAL · btree</text>
+            <rect class="box" x="504" y="198" width="136" height="34" rx="2"/>
+            <text x="516" y="219" font-size="9.5" class="t-strong">GRAPH · cte walk</text>
+            <!-- ask/inform -->
+            <rect class="box" x="488" y="300" width="168" height="46" rx="2"/>
+            <text x="500" y="319" font-size="10" class="t-strong">ASK / INFORM</text>
+            <text x="500" y="334" font-size="8.5">grounded · cited · honest</text>
+            <!-- sleep -->
+            <rect class="dash" x="24" y="344" width="396" height="46" rx="2"/>
+            <text x="36" y="363" font-size="9.5" class="t-strong">NIGHTLY CONSOLIDATION</text>
+            <text x="36" y="377" font-size="8.5">merge fragments · form knowledge · let stale fade — reversible</text>
+            <!-- edges -->
+            <line x1="90" y1="82" x2="90" y2="138" marker-end="url(#arr)"/>
+            <line x1="90" y1="186" x2="90" y2="242" marker-end="url(#arr)"/>
+            <line x1="156" y1="267" x2="250" y2="192" marker-end="url(#arr)"/>
+            <line x1="336" y1="210" x2="336" y2="266" marker-end="url(#arr)"/>
+            <line x1="420" y1="175" x2="502" y2="120" marker-end="url(#arr)"/>
+            <line x1="572" y1="252" x2="572" y2="298" marker-end="url(#arr)"/>
+            <line x1="222" y1="367" x2="336" y2="316" marker-end="url(#arr)"/>
+            <text x="98" y="112" font-size="8">enqueue</text>
+            <text x="98" y="216" font-size="8">drain</text>
+            <text x="190" y="220" font-size="8">write</text>
+            <text x="430" y="140" font-size="8">recall</text>
+            <text x="580" y="278" font-size="8">fuse</text>
+          </svg>
+        </div>
+      </div>
+    </div>
+
+    <!-- shipped-at-work row -->
+    <div class="proj__row">
+      <div class="proj proj--small">
+        <span class="proj__tag">Shipped · 915.Trade — by Groww</span>
+        <h3>915.trade</h3>
+        <div class="proj__sub">F&amp;O widget terminal</div>
+        <p>An advanced futures &amp; options terminal built from zero for professional traders — straddle charts, scalper tape and index views as <b>live, draggable widgets</b>, where rendering latency is the product. See FIG. 03-B above for a working miniature.</p>
+      </div>
+      <div class="proj proj--small">
+        <span class="proj__tag">Shipped · Groww</span>
+        <h3>Support Platform</h3>
+        <div class="proj__sub">Chatbot + Journey Builder</div>
+        <p>Architected the chatbot serving <b>5M+ conversations</b> — 30+ components, WebSockets, AI streaming, retry semantics — and the graph-based Journey Builder that lets ops author its decision trees. Packaged as an SDK, now embedded in three apps.</p>
+      </div>
+      <div class="proj proj--small">
+        <span class="proj__tag">Shipped · Keychain</span>
+        <h3>Keychain OS</h3>
+        <div class="proj__sub">ERP for manufacturers</div>
+        <p>Building the frontend of an ERP-style operating system for manufacturers — <b>monorepo architecture, design system</b>, and the data-heavy surfaces that make an ERP feel fast.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= 05 STACK ================= -->
+<section class="stack" id="stack" data-dbg="stack — capabilities matrix">
+  <div class="sec-head"><span>05 — Capabilities</span><span>spec sheet</span></div>
+  <h2 class="sec-title">Fullstack, weighted<br><span class="thin">to the front.</span></h2>
+  <div class="spec">
+    <div class="spec__row">
+      <div class="spec__k">Languages</div>
+      <div class="spec__v"><span class="lead">TypeScript</span><span class="lead">JavaScript</span><span>HTML</span><span>CSS</span><span>SQL</span><span>GLSL</span></div>
+    </div>
+    <div class="spec__row">
+      <div class="spec__k">Frontend</div>
+      <div class="spec__v"><span class="lead">React</span><span class="lead">Next.js</span><span>React Native · Android webview</span><span>React Flow</span><span>Canvas &amp; WebGL</span></div>
+    </div>
+    <div class="spec__row">
+      <div class="spec__k">Backend</div>
+      <div class="spec__v"><span class="lead">Node.js</span><span>Nest.js</span><span>Express</span><span>WebSockets</span><span>Postgres · pgvector</span><span>pg-boss queues</span></div>
+    </div>
+    <div class="spec__row">
+      <div class="spec__k">State &amp; data flow</div>
+      <div class="spec__v"><span>Redux</span><span class="lead">Zustand</span><span>real-time streaming</span><span>AI/LLM integration — streaming, routing, cost guards</span></div>
+    </div>
+    <div class="spec__row">
+      <div class="spec__k">Architecture</div>
+      <div class="spec__v"><span class="lead">Frontend system design</span><span>micro-frontends</span><span>monorepos — Turborepo · pnpm</span><span>webview SDKs</span><span>graph algorithms</span></div>
+    </div>
+    <div class="spec__row">
+      <div class="spec__k">Practice</div>
+      <div class="spec__v"><span class="lead">Performance engineering — sub-100ms budgets</span><span>0→1 ownership</span><span>native-layer patches when the web runs out</span><span>AI-accelerated development</span></div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= 06 AI WORKFLOWS ================= -->
+<section class="aiwf" id="ai" data-dbg="ai workflows — agent skill runbook">
+  <div class="sec-head"><span>06 — AI Workflows</span><span>the agentic toolchain</span></div>
+  <h2 class="sec-title">One engineer,<br><span class="thin">run like an org.</span></h2>
+  <p class="aiwf__intro">Every ADR, issue and PR in TheBrain moves through <b>Claude Code skills I wrote for the repo</b> — a PM lens, an architect lens, a security lens, and an autonomous fix-issue loop, with me as the reviewer of record. Alongside them, a set of meta-workflows adapted from David Ondrej's open skill library keeps the agents themselves honest.</p>
+  <div class="aiwf__pipeline">
+    <i>IDEA</i><i>→</i><span>/grill-me</span><i>→</i><span>/pm · /architect · /security-issue</span><i>→</i><span>/batch-github-issues</span><i>→</i><span>/preflight</span><i>→</i><span>/fix-issue</span><i>→</i><span>/ship</span><i>→</i><span>/adr</span><i>→</i><i>MERGED</i>
+  </div>
+  <div class="aiwf__grid">
+    <div class="fig aiwf__panel">
+      <div class="fig__head"><span>RUNBOOK 06-A</span><span>issue pipeline — written for TheBrain</span></div>
+      <div class="fig__body">
+        <div class="skillrow"><code>/pm</code><p>Files issues as a product manager — user story, acceptance criteria tied to user value, success metrics.</p></div>
+        <div class="skillrow"><code>/architect</code><p>Files design issues — architectural impact, data-model changes, service boundaries, perf and scale questions that must be answered before code.</p></div>
+        <div class="skillrow"><code>/security-issue</code><p>Security review lens — threat model, attack surface, mitigations written as acceptance criteria.</p></div>
+        <div class="skillrow"><code>/spike-issue</code><p>Time-boxed investigations where the deliverable is a decision and a document, not shippable code.</p></div>
+        <div class="skillrow"><code>/batch-github-issues</code><p>Turns a plan into a sequenced backlog — priority/size/scope labels, milestones, blocked-by edges wired between tickets.</p></div>
+        <div class="skillrow"><code>/preflight</code><p>Reconciles the true state of repo, tracker and permissions before any work — main sync, in-flight audit, stale-lock detection. Multiple agents work the repo; never trust a stale snapshot.</p></div>
+        <div class="skillrow"><code>/fix-issue</code><p>Autonomously takes a ticket to a merged PR — claim, implement test-first, verify, open PR, merge, update labels.</p></div>
+        <div class="skillrow"><code>/ship</code><p>Lands a PR on main around the repo's real merge quirks — disabled auto-merge, non-required checks, stacked PRs that fold into their base.</p></div>
+        <div class="skillrow"><code>/test-doctor</code><p>Diagnoses environmental test failures — shared test-DB drift, bare worktrees, wall-clock flakes — before anyone debugs phantom code bugs.</p></div>
+        <div class="skillrow"><code>/adr</code><p>Records architecture decisions permanently — what, why, alternatives, consequences — so nothing gets relitigated.</p></div>
+        <div class="skillrow"><code>/dev</code><p>Boots the full local stack in order: Docker services, health checks, migrations, then every app via Turbo.</p></div>
+        <div class="aiwf__src">source · <a href="https://github.com/Jaybhade/TheBrain/tree/main/.claude/skills" target="_blank" rel="noopener">TheBrain /.claude/skills</a></div>
+      </div>
+    </div>
+    <div class="fig aiwf__panel">
+      <div class="fig__head"><span>RUNBOOK 06-B</span><span>meta-workflows — adapted from davidondrej/skills</span></div>
+      <div class="fig__body">
+        <div class="skillrow"><code>/grill-me</code><p>The agent interviews me relentlessly about a design, one question at a time, until no branch of the decision tree is unresolved.</p></div>
+        <div class="skillrow"><code>/brain-to-docs</code><p>A Q&amp;A loop that extracts vision, taste and decisions out of my head into README and ADRs.</p></div>
+        <div class="skillrow"><code>/handoff</code><p>Compacts a working session into a single brief a fresh agent can continue from — no re-discovery, no repeated mistakes.</p></div>
+        <div class="skillrow"><code>/delegating-to-agents</code><p>Agent-to-agent orchestration — picking the right agent for a subtask, prompting it, polling its progress.</p></div>
+        <div class="skillrow"><code>/agent-self-scheduling</code><p>Puts agents on a clock — cron, heartbeats, recurring autonomous checks.</p></div>
+        <div class="skillrow"><code>/deep-research</code><p>Rigorous one-paragraph research prompts fired at a research API, ending in a cited markdown report.</p></div>
+        <div class="skillrow"><code>/effective-agent-skills</code><p>The meta-skill — how to author skills that trigger reliably: anatomy, progressive disclosure, anti-patterns, testing.</p></div>
+        <div class="aiwf__src">source · <a href="https://github.com/davidondrej/skills" target="_blank" rel="noopener">github.com/davidondrej/skills</a></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= 07 JOURNEY ================= -->
+<section class="journey" id="journey" data-dbg="journey — timeline">
+  <div class="sec-head"><span>07 — Journey</span><span>2019 — present</span></div>
+  <h2 class="sec-title">Indore → Bangalore<br><span class="thin">→ Gurugram.</span></h2>
+
+  <div class="journey__list">
+    <div class="journey__line"><i id="journey-progress"></i></div>
+
+    <div class="j-item">
+      <div class="j-item__meta"><b>2019 — 2023</b>IET DAVV, Indore<br>B.E. Engineering</div>
+      <div>
+        <h3>Foundations</h3>
+        <p>Technical Head of the Entrepreneurship Cell. Shipped the institute's <b>ACIIE website in my second year</b> — the first time strangers depended on my code. Built a MERN commerce platform, a React Native Covid-19 tracker, and a GPT-powered voice assistant before that was a product category.</p>
+        <div class="j-item__tags"><span>React</span><span>React Native</span><span>MERN</span><span>OpenAI API</span></div>
+      </div>
+    </div>
+
+    <div class="j-item">
+      <div class="j-item__meta"><b>Jul 2022 — Jun 2023</b>Groww, Bangalore<br>SDE Intern</div>
+      <div>
+        <h3>First production surface</h3>
+        <p>Shipped <b>voice messages for support tickets</b> with real-time pitch-wave visualization rendered as users speak. Over <b>20% of Groww's support tickets are now voice-based</b>. Rebuilt Help &amp; Support for Lighthouse and SEO; designed the Recent Activities module.</p>
+        <div class="j-item__tags"><span>Web Audio API</span><span>Canvas</span><span>SEO</span></div>
+      </div>
+    </div>
+
+    <div class="j-item">
+      <div class="j-item__meta"><b>Jun 2023 — Apr 2025</b>Groww, Bangalore<br>SDE 1</div>
+      <div>
+        <h3>Owning a platform end to end</h3>
+        <p>Architected the <b>customer-support chatbot from scratch</b> — 30+ reusable components, WebSockets, AI streaming, message queuing and retry semantics. <b>5M+ conversations served</b>, with a measurable lift in self-serve resolution.</p>
+        <p>Designed <b>Journey Builder</b> on React Flow — graph algorithms powering 30+ contextual answers and 6 major workflows across Stocks, F&amp;O, Mutual Funds, IPO, UPI and Balance. The tool ops uses to program the bot without engineers.</p>
+        <p>When the web platform ran out, I went below it: <b>patched react-native-webview's native code</b> to preload webviews — iOS P90 cold start <b>1.8s → 100ms</b> — then packaged the chatbot as an SDK now embedded in the Wealth and GrowwCredit apps.</p>
+        <div class="j-item__tags"><span>WebSockets</span><span>React Flow</span><span>Graph algorithms</span><span>Native webview</span><span>SDK design</span></div>
+      </div>
+    </div>
+
+    <div class="j-item">
+      <div class="j-item__meta"><b>2024</b>Groww, Bangalore<br>Internal Hackathon</div>
+      <div>
+        <h3>Hackathon winner</h3>
+        <p>Won Groww's 2024 internal hackathon with a <b>real-time fundamental-analysis chatbot for stocks</b> — live market data fused with AI reasoning, built in a weekend, demoed to the company.</p>
+        <div class="j-item__tags"><span>Real-time data</span><span>AI</span></div>
+      </div>
+    </div>
+
+    <div class="j-item">
+      <div class="j-item__meta"><b>Apr — Aug 2025</b>915.Trade — by Groww<br>SDE 2</div>
+      <div>
+        <h3>915.trade — the pro terminal</h3>
+        <p>Moved to Groww's pro-trading arm as SDE-2 to build its <b>advanced F&amp;O charting platform from zero</b> — a widget-based terminal where straddle charts, scalper tape and index views are live, draggable surfaces, and where speed and real-time correctness are the entire value proposition.</p>
+        <div class="j-item__tags"><span>F&amp;O</span><span>Charting</span><span>Widget workspace</span><span>Real-time</span><span>Performance</span></div>
+      </div>
+    </div>
+
+    <div class="j-item">
+      <div class="j-item__meta"><b>Aug 2025 — Present</b>Keychain, Gurugram<br>Frontend Developer</div>
+      <div>
+        <h3>Keychain OS</h3>
+        <p>Building the frontend of an <b>ERP-style operating system for manufacturers</b> — architecture, design system, data-heavy surfaces. The largest canvas yet.</p>
+        <div class="j-item__tags"><span>Next.js</span><span>TypeScript</span><span>Turborepo</span><span>System design</span></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= TERMINAL (press ~) ================= -->
+<div class="terminal" id="terminal" hidden>
+  <div class="terminal__win">
+    <div class="terminal__bar"><span>jayesh@portfolio — zsh — 80×24</span><button id="term-close" aria-label="close">✕</button></div>
+    <div class="terminal__body" id="term-body"></div>
+    <div class="terminal__inputrow">
+      <span class="terminal__ps1">jayesh@portfolio:~$</span>
+      <input id="term-in" autocomplete="off" spellcheck="false" aria-label="terminal input">
+    </div>
+  </div>
+</div>
+
+<!-- ================= FOOTER ================= -->
+<footer id="contact" data-dbg="footer — smoke field (tier-gated)">
+  <canvas id="footer-canvas"></canvas>
+  <div class="footer__top">
+    <div class="footer__globe">
+      <svg viewBox="0 0 44 28" fill="none" stroke-width="1">
+        <ellipse cx="22" cy="14" rx="21" ry="13"/>
+        <ellipse cx="22" cy="14" rx="10" ry="13"/>
+        <line x1="1" y1="14" x2="43" y2="14"/>
+        <path d="M3.5 7.5 C10 11, 34 11, 40.5 7.5"/>
+        <path d="M3.5 20.5 C10 17, 34 17, 40.5 20.5"/>
+      </svg>
+    </div>
+    <p class="footer__statement">I design, build and own real-time products end to end — from the database schema to the last easing curve.</p>
+    <p class="footer__statement">Open to hard problems in trading systems, infrastructure, and data-heavy interfaces.</p>
+    <a class="footer__cta" href="mailto:jayeshjibhade@gmail.com">Start a project <span>↗</span></a>
+  </div>
+  <div class="footer__meta">
+    <span>© 2026 Jayesh Bhade</span>
+    <div class="links">
+      <a href="https://linkedin.com/in/jayeshbhade" target="_blank" rel="noopener">LinkedIn</a>
+      <a href="https://github.com/Jaybhade" target="_blank" rel="noopener">GitHub</a>
+      <a href="mailto:jayeshjibhade@gmail.com">Email</a>
+      <a href="#" id="term-open">Terminal ~</a>
+    </div>
+    <span>Indore ✕ Gurugram, IN</span>
+  </div>
+  <div class="footer__name" aria-label="JAYESH BHADE">
+    <span>JAYESH BHADE</span>
+  </div>
+</footer>
+
+<noscript><style>.loader{display:none}</style></noscript>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/ScrollTrigger.min.js"></script>
+<script>
+/* ============================================================
+   Jayesh Bhade — portfolio runtime
+   Single file. three.js r128 + GSAP (both optional — the page
+   degrades gracefully if either fails to arrive).
+   ============================================================ */
+const hasGsap = typeof gsap !== 'undefined' && typeof ScrollTrigger !== 'undefined';
+const hasThree = typeof THREE !== 'undefined';
+if(hasGsap) gsap.registerPlugin(ScrollTrigger);
+const $ = s => document.querySelector(s);
+const lerp = (a,b,u)=>a+(b-a)*u;
+const clamp01 = v=>Math.min(Math.max(v,0),1);
+const prefersReduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+/* ---------------- mouse (shared, smoothed in RAF) ---------------- */
+const mouse = {x:.5,y:.5,sx:.5,sy:.5};
+addEventListener('mousemove', e=>{
+  mouse.x = e.clientX/innerWidth;
+  mouse.y = 1 - e.clientY/innerHeight;
+});
+
+/* ============================================================
+   PERF — adaptive quality. Detect a device tier up front, then
+   watch real FPS and shed load if the device can't hold 60.
+   Everything expensive on this page asks PERF what it's allowed.
+   ============================================================ */
+const PERF = (()=>{
+  const cores = navigator.hardwareConcurrency || 4;
+  const mem = navigator.deviceMemory || 4;
+  const coarse = matchMedia('(pointer:coarse)').matches;
+  let gpu = 'unknown';
+  try{
+    const gl = document.createElement('canvas').getContext('webgl');
+    const ext = gl && gl.getExtension('WEBGL_debug_renderer_info');
+    if(ext) gpu = gl.getParameter(ext.UNMASKED_RENDERER_WEBGL);
+  }catch(e){}
+  const weakGPU = /swiftshader|software|llvmpipe|mali-4|mali-t[0-7]|adreno \(tm\) [1-4]|videocore/i.test(gpu);
+
+  let tier = 2;
+  if(coarse || innerWidth < 820) tier = 1;
+  if(cores <= 4 && mem <= 4) tier = Math.min(tier, 1);
+  if(weakGPU || cores <= 2 || mem <= 2) tier = 0;
+
+  const SETTINGS = [
+    {label:'LOW',  particles:6000,  knotPts:2200, dpr:.75, post:false, footerField:false, ticksPerSec:8 },
+    {label:'MID',  particles:14000, knotPts:3200, dpr:1,   post:false, footerField:true,  ticksPerSec:14},
+    {label:'HIGH', particles:40000, knotPts:4000, dpr:1.5, post:true,  footerField:true,  ticksPerSec:24},
+  ];
+  const listeners = [];
+  let degradations = 0, armed = false;
+  setTimeout(()=>armed = true, 5000); // let the loader + first paint settle
+
+  let acc = 0, frames = 0, last = performance.now();
+  return {
+    gpu, cores, mem,
+    get tier(){ return tier; },
+    get s(){ return SETTINGS[tier]; },
+    onChange(fn){ listeners.push(fn); },
+    degrade(){
+      if(tier > 0 && degradations < 2){
+        tier--; degradations++;
+        listeners.forEach(f=>f(tier));
+        console.warn('[perf] fps below budget — degraded to tier', SETTINGS[tier].label);
+      }
+    },
+    frame(){
+      const now = performance.now();
+      acc += now - last; last = now; frames++;
+      if(acc > 3000){
+        const fps = frames/(acc/1000);
+        acc = 0; frames = 0;
+        if(armed && fps < 42 && !document.hidden) this.degrade();
+      }
+    }
+  };
+})();
+
+/* ---------------- perf HUD — the page profiles itself ---------------- */
+const HUD = (()=>{
+  const el = {fps:$('#ph-fps'), ms:$('#ph-ms'), calls:$('#ph-calls'), mem:$('#ph-mem'), tier:$('#ph-tier'), dpr:$('#ph-dpr'), gpu:$('#ph-gpu')};
+  el.gpu.textContent = PERF.gpu.split('(')[0].slice(0,24);
+  let frames=0, tAcc=0, lastT=performance.now(), ema=16.7;
+  return {
+    frame(drawCalls){
+      const now = performance.now(), dt = now-lastT; lastT = now;
+      ema += (dt-ema)*.08; frames++; tAcc += dt;
+      if(tAcc > 500){
+        el.fps.textContent = Math.round(frames/(tAcc/1000));
+        el.ms.textContent = ema.toFixed(1);
+        el.calls.textContent = drawCalls;
+        el.tier.textContent = PERF.s.label;
+        el.dpr.textContent = Math.min(devicePixelRatio, PERF.s.dpr).toFixed(2);
+        el.mem.textContent = performance.memory ? (performance.memory.usedJSHeapSize/1048576|0)+' MB' : 'n/a';
+        frames=0; tAcc=0;
+      }
+    }
+  };
+})();
+
+/* ---------------- custom cursor ---------------- */
+(()=>{
+  const c = $('#cursor');
+  if(!c || matchMedia('(hover:none)').matches) return;
+  let cx=-100, cy=-100, tx=-100, ty=-100;
+  addEventListener('mousemove', e=>{tx=e.clientX; ty=e.clientY;});
+  (function loop(){
+    cx = lerp(cx,tx,.2); cy = lerp(cy,ty,.2);
+    c.style.transform = `translate(${cx}px,${cy}px) translate(-50%,-50%)`;
+    requestAnimationFrame(loop);
+  })();
+  document.querySelectorAll('a,button').forEach(el=>{
+    el.addEventListener('mouseenter',()=>c.classList.add('is-hover'));
+    el.addEventListener('mouseleave',()=>c.classList.remove('is-hover'));
+  });
+})();
+
+/* ---------------- lazy init helper: build sections only when needed ---------------- */
+function onNear(el, cb, margin='120%'){
+  const io = new IntersectionObserver(entries=>{
+    if(entries[0].isIntersecting){ io.disconnect(); cb(); }
+  },{rootMargin:margin});
+  io.observe(el);
+}
+
+/* ============================================================
+   WEBGL SYSTEMS — created lazily, tier-aware, error-isolated
+   ============================================================ */
+const systems = {hero:null, footer:null, assembly:null, knot:null};
+
+if(hasThree){ try{
+
+/* ---------- smoke field: fbm value-noise shader ---------- */
+const SMOKE_FRAG = `
+precision highp float;
+uniform float uTime;
+uniform vec2 uRes;
+uniform vec2 uMouse;
+uniform float uIntensity;
+uniform float uDither;
+float hash(vec2 p){
+  p = fract(p*vec2(123.34, 456.21));
+  p += dot(p, p+45.32);
+  return fract(p.x*p.y);
+}
+float noise(vec2 p){
+  vec2 i = floor(p), f = fract(p);
+  vec2 u = f*f*(3.-2.*f);
+  return mix(mix(hash(i), hash(i+vec2(1,0)), u.x),
+             mix(hash(i+vec2(0,1)), hash(i+vec2(1,1)), u.x), u.y);
+}
+float fbm(vec2 p){
+  float v = 0., a = .5;
+  mat2 rot = mat2(.87,.48,-.48,.87);
+  for(int i=0;i<5;i++){ v += a*noise(p); p = rot*p*2.02; a *= .5; }
+  return v;
+}
+void main(){
+  vec2 uv = gl_FragCoord.xy/uRes;
+  vec2 p = uv*vec2(uRes.x/uRes.y, 1.);
+  vec2 drift = vec2(uTime*.018, -uTime*.011);
+  vec2 m = (uMouse-.5)*.35;
+  float q = fbm(p*1.6 + drift + m);
+  float n = fbm(p*2.2 - drift*1.4 + q*1.6);
+  vec3 dark  = vec3(.030,.030,.028);
+  vec3 midg  = vec3(.105,.102,.094);
+  vec3 light = vec3(.235,.228,.210);
+  vec3 col = mix(dark, midg, smoothstep(.25,.75,n));
+  col = mix(col, light, smoothstep(.62,.95,n*q*2.1)*uIntensity);
+  float band = exp(-pow((uv.y-.42 - .1*fbm(p*1.2+drift)), 2.)*22.);
+  col += light*band*.28*uIntensity;
+  float vig = smoothstep(1.25,.35,distance(uv,vec2(.5,.45)));
+  col *= mix(.55,1.,vig);
+  if(uDither > .5){
+    // ordered dithering via interleaved gradient noise + 3-level posterize
+    float g = dot(col, vec3(.299,.587,.114));
+    float ign = fract(52.9829189*fract(dot(gl_FragCoord.xy, vec2(0.06711056,0.00583715))));
+    g = floor(g*3.0 + ign)/3.0;
+    col = vec3(g)*vec3(1.03,1.0,.93);
+  }
+  col += (hash(gl_FragCoord.xy+uTime)-.5)*.012;
+  gl_FragColor = vec4(col,1.);
+}`;
+
+/* post pass: chromatic aberration + soft bloom + scanlines (tier HIGH only) */
+const POST_FRAG = `
+precision highp float;
+uniform sampler2D tDiffuse;
+uniform vec2 uRes;
+uniform float uTime;
+void main(){
+  vec2 uv = gl_FragCoord.xy/uRes;
+  vec2 d = uv - .5;
+  float k = dot(d,d)*.9;
+  float r = texture2D(tDiffuse, uv - d*k*.016).r;
+  float g = texture2D(tDiffuse, uv).g;
+  float b = texture2D(tDiffuse, uv + d*k*.016).b;
+  vec3 col = vec3(r,g,b);
+  vec2 px = 2.5/uRes;
+  vec3 blur = ( texture2D(tDiffuse, uv+vec2(px.x,0)).rgb
+              + texture2D(tDiffuse, uv-vec2(px.x,0)).rgb
+              + texture2D(tDiffuse, uv+vec2(0,px.y)).rgb
+              + texture2D(tDiffuse, uv-vec2(0,px.y)).rgb )*.25;
+  col += max(blur-.32, 0.)*.55;                       // soft bloom lift
+  col *= 1. - .045*sin(uv.y*uRes.y*3.14159 + uTime);  // scanlines
+  gl_FragColor = vec4(col,1.);
+}`;
+
+class SmokeField{
+  constructor(canvas, intensity=1){
+    this.canvas = canvas;
+    this.visible = true;
+    this.renderer = new THREE.WebGLRenderer({canvas, antialias:false});
+    this.scene = new THREE.Scene();
+    this.camera = new THREE.OrthographicCamera(-1,1,1,-1,0,1);
+    this.uniforms = {
+      uTime:{value:0}, uRes:{value:new THREE.Vector2(1,1)},
+      uMouse:{value:new THREE.Vector2(.5,.5)},
+      uIntensity:{value:intensity}, uDither:{value:0}
+    };
+    this.scene.add(new THREE.Mesh(new THREE.PlaneGeometry(2,2),
+      new THREE.ShaderMaterial({fragmentShader:SMOKE_FRAG, uniforms:this.uniforms})));
+    // optional post chain
+    this.post = null;
+    if(PERF.s.post){
+      this.rt = new THREE.WebGLRenderTarget(2,2);
+      this.postUniforms = {tDiffuse:{value:this.rt.texture}, uRes:{value:new THREE.Vector2(1,1)}, uTime:{value:0}};
+      this.postScene = new THREE.Scene();
+      this.postScene.add(new THREE.Mesh(new THREE.PlaneGeometry(2,2),
+        new THREE.ShaderMaterial({fragmentShader:POST_FRAG, uniforms:this.postUniforms})));
+      this.post = true;
+    }
+    this.setQuality(PERF.s);
+    addEventListener('resize', ()=>this.resize());
+    new IntersectionObserver(([e])=>this.visible=e.isIntersecting).observe(canvas);
+  }
+  setQuality(s){
+    this.renderer.setPixelRatio(Math.min(devicePixelRatio, s.dpr));
+    if(!s.post) this.post = null;
+    this.resize();
+  }
+  resize(){
+    const w = this.canvas.clientWidth||1, h = this.canvas.clientHeight||1;
+    this.renderer.setSize(w,h,false);
+    const pw = w*this.renderer.getPixelRatio(), ph = h*this.renderer.getPixelRatio();
+    this.uniforms.uRes.value.set(pw,ph);
+    if(this.rt){ this.rt.setSize(pw,ph); this.postUniforms.uRes.value.set(pw,ph); }
+  }
+  render(t){
+    if(!this.visible) return 0;
+    this.uniforms.uTime.value = t;
+    this.uniforms.uMouse.value.set(mouse.sx, mouse.sy);
+    if(this.post){
+      this.renderer.setRenderTarget(this.rt);
+      this.renderer.render(this.scene,this.camera);
+      this.renderer.setRenderTarget(null);
+      this.postUniforms.uTime.value = t;
+      this.renderer.render(this.postScene,this.camera);
+    } else {
+      this.renderer.render(this.scene,this.camera);
+    }
+    return this.renderer.info.render.calls;
+  }
+}
+
+systems.hero = new SmokeField($('#hero-canvas'), 1);
+if(PERF.s.footerField){
+  onNear($('#footer-canvas'), ()=>{ systems.footer = new SmokeField($('#footer-canvas'), .85); });
+} else {
+  document.querySelector('footer').classList.add('no-field');
+}
+
+/* ---------- assembly: GPU particles — curl flow + mouse repulsion ----------
+   Positions never touch the CPU after upload: the vertex shader lerps
+   each particle from its scatter position to its slot in the word,
+   advected by the analytic curl of a sine potential (divergence-free),
+   and repelled by the cursor. progress + mouse are two uniforms/frame. */
+const ASSEMBLY_VERT = `
+attribute vec3 aStart;
+attribute vec3 aTarget;
+attribute float aDelay;
+attribute float aSeed;
+uniform float uProgress;
+uniform float uTime;
+uniform float uSize;
+uniform vec3 uMouse;
+uniform float uRepel;
+varying float vE;
+vec3 curl(vec3 p){
+  float t = uTime*.35;
+  return vec3(
+    cos(p.y*1.9+t)*1.2 - cos(p.z*1.3-t),
+    cos(p.z*2.1+t)*1.1 - cos(p.x*1.7+t),
+    cos(p.x*1.5-t)     - cos(p.y*2.3+t));
+}
+void main(){
+  float u = clamp((uProgress-aDelay)/(1.0-aDelay), 0.0, 1.0);
+  float e = 1.0 - pow(1.0-u, 4.0);
+  vE = e;
+  vec3 pos = mix(aStart, aTarget, e);
+  pos += curl(pos*.55 + aSeed) * (0.6*(1.0-e) + 0.03);
+  vec2 d = pos.xy - uMouse.xy;
+  pos.xy += normalize(d+0.0001) * exp(-dot(d,d)*1.35) * uRepel * (0.25+0.75*e);
+  vec4 mv = modelViewMatrix * vec4(pos,1.0);
+  gl_Position = projectionMatrix * mv;
+  gl_PointSize = uSize * (6.0/-mv.z) * (0.7 + 0.6*fract(aSeed*13.7));
+}`;
+const ASSEMBLY_FRAG = `
+precision mediump float;
+varying float vE;
+void main(){
+  float a = smoothstep(.5,.12,length(gl_PointCoord-.5));
+  gl_FragColor = vec4(vec3(.85,.84,.80), a*(.30+.42*vE));
+}`;
+
+function createAssembly(){
+  const canvas = $('#assembly-canvas');
+  const COUNT = PERF.s.particles;
+  const renderer = new THREE.WebGLRenderer({canvas, antialias:false, alpha:true});
+  renderer.setPixelRatio(Math.min(devicePixelRatio, Math.max(PERF.s.dpr,1)));
+  const scene = new THREE.Scene();
+  const camera = new THREE.PerspectiveCamera(50, 1, .1, 100);
+  camera.position.z = 10;
+
+  const aStart = new Float32Array(COUNT*3);
+  const aTarget = new Float32Array(COUNT*3);
+  const aDelay = new Float32Array(COUNT);
+  const aSeed = new Float32Array(COUNT);
+  for(let i=0;i<COUNT;i++){
+    const r = 9 + Math.random()*9;
+    const th = Math.random()*Math.PI*2, ph = Math.acos(2*Math.random()-1);
+    aStart[i*3]   = r*Math.sin(ph)*Math.cos(th);
+    aStart[i*3+1] = r*Math.sin(ph)*Math.sin(th)*.6;
+    aStart[i*3+2] = r*Math.cos(ph)*.5 - 4;
+    aDelay[i] = Math.random()*.55;
+    aSeed[i] = Math.random()*100;
+  }
+  function buildTargets(){
+    const W=1200, H=320;
+    const c = document.createElement('canvas'); c.width=W; c.height=H;
+    const ctx = c.getContext('2d');
+    ctx.fillStyle='#fff';
+    ctx.font='700 250px "Space Grotesk", sans-serif';
+    ctx.textAlign='center'; ctx.textBaseline='middle';
+    ctx.fillText('WHOLE', W/2, H/2+10);
+    const data = ctx.getImageData(0,0,W,H).data;
+    const pts=[];
+    for(let y=0;y<H;y+=2) for(let x=0;x<W;x+=2)
+      if(data[(y*W+x)*4+3]>128) pts.push(x, y);
+    const n = pts.length/2, scaleW = 12/W;
+    for(let i=0;i<COUNT;i++){
+      const j = (Math.random()*n|0)*2;
+      aTarget[i*3]   = (pts[j]-W/2)*scaleW + (Math.random()-.5)*.02;
+      aTarget[i*3+1] = -(pts[j+1]-H/2)*scaleW - .4 + (Math.random()-.5)*.02;
+      aTarget[i*3+2] = (Math.random()-.5)*.5;
+    }
+    geo.attributes.aTarget.needsUpdate = true;
+  }
+
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.BufferAttribute(aStart, 3)); // placeholder; real pos in shader
+  geo.setAttribute('aStart', new THREE.BufferAttribute(aStart, 3));
+  geo.setAttribute('aTarget', new THREE.BufferAttribute(aTarget, 3));
+  geo.setAttribute('aDelay', new THREE.BufferAttribute(aDelay, 1));
+  geo.setAttribute('aSeed', new THREE.BufferAttribute(aSeed, 1));
+
+  const uniforms = {
+    uProgress:{value:0}, uTime:{value:0},
+    uSize:{value: (Math.min(devicePixelRatio, Math.max(PERF.s.dpr,1)))*2.2},
+    uMouse:{value:new THREE.Vector3(999,999,0)}, uRepel:{value: matchMedia('(hover:none)').matches ? 0 : 1.1}
+  };
+  const points = new THREE.Points(geo, new THREE.ShaderMaterial({
+    vertexShader:ASSEMBLY_VERT, fragmentShader:ASSEMBLY_FRAG, uniforms,
+    transparent:true, depthWrite:false, blending:THREE.AdditiveBlending
+  }));
+  points.frustumCulled = false;
+  scene.add(points);
+  document.fonts.ready.then(buildTargets);
+  buildTargets();
+  $('#hud-count').textContent = COUNT.toLocaleString();
+
+  let progress=0, target=0, visible=true;
+  new IntersectionObserver(([e])=>visible=e.isIntersecting).observe(canvas);
+  const secEl = $('#assembly');
+  function readScroll(){
+    const total = secEl.offsetHeight - innerHeight;
+    target = clamp01(-secEl.getBoundingClientRect().top/total);
+  }
+  addEventListener('scroll', readScroll, {passive:true});
+  addEventListener('resize', readScroll);
+  readScroll();
+
+  function resize(){
+    const w=canvas.clientWidth, h=canvas.clientHeight;
+    renderer.setSize(w,h,false);
+    camera.aspect=w/h; camera.updateProjectionMatrix();
+    camera.position.z = w<760 ? 16 : 10;
+    points.position.y = w<760 ? -2.4 : 0;
+  }
+  resize(); addEventListener('resize',resize);
+
+  const hudP=$('#hud-progress'), hudS=$('#hud-state');
+  const mouseWorld = new THREE.Vector3();
+  return {
+    setQuality(s){
+      geo.setDrawRange(0, Math.min(COUNT, s.particles));
+      renderer.setPixelRatio(Math.min(devicePixelRatio, Math.max(s.dpr,1)));
+      $('#hud-count').textContent = Math.min(COUNT, s.particles).toLocaleString();
+    },
+    render(t){
+      if(!visible) return 0;
+      progress = lerp(progress, target, .075);
+      uniforms.uProgress.value = progress;
+      uniforms.uTime.value = prefersReduced ? 0 : t;
+      // cursor → world space on the z=0 plane
+      mouseWorld.set(mouse.sx*2-1, mouse.sy*2-1, .5).unproject(camera);
+      const dir = mouseWorld.sub(camera.position).normalize();
+      const k = -camera.position.z/dir.z;
+      uniforms.uMouse.value.copy(camera.position).addScaledVector(dir, k).sub(points.position);
+      points.rotation.y = (mouse.sx-.5)*.14;
+      points.rotation.x = -(mouse.sy-.5)*.10;
+      hudP.textContent = progress.toFixed(2);
+      hudS.textContent = progress<.15?'SCATTERED':progress<.9?'CONVERGING':'WHOLE';
+      renderer.render(scene,camera);
+      return renderer.info.render.calls;
+    }
+  };
+}
+onNear($('#assembly'), ()=>{ systems.assembly = createAssembly(); });
+
+PERF.onChange(()=>{
+  const s = PERF.s;
+  Object.values(systems).forEach(sys=>sys && sys.setQuality && sys.setQuality(s));
+});
+
+}catch(err){ console.warn('[webgl] disabled:', err); } }
+
+/* ============================================================
+   FIG. 02 — FOURIER EPICYCLES
+   A square wave drawn by a chain of rotating circles. Scroll
+   adds odd harmonics: f(t) = Σ 4/kπ · sin(kt), k = 1,3,5,…
+   Canvas 2D on purpose — this figure survives even without WebGL.
+   ============================================================ */
+function createFourier(){
+  const cv = $('#geo-canvas');
+  const ctx = cv.getContext('2d');
+  let visible=true, u=0, uTarget=0, trace=[], lastW=0, lastH=0;
+  new IntersectionObserver(([e])=>visible=e.isIntersecting).observe(cv);
+  const secEl = $('#geometry');
+  function readScroll(){
+    const r = secEl.getBoundingClientRect();
+    uTarget = clamp01((innerHeight*.6 - r.top)/(r.height - innerHeight*.2));
+  }
+  addEventListener('scroll', readScroll, {passive:true});
+  addEventListener('resize', readScroll);
+  readScroll();
+  const roN=$('#ro-n'), roK=$('#ro-k'), roT=$('#ro-t');
+  const ink = a=>`rgba(216,213,204,${a})`;
+  return {
+    setQuality(){},
+    render(t){
+      if(!visible||!cv.clientWidth||document.hidden) return 0;
+      const dpr = PERF.tier>0 ? Math.min(devicePixelRatio,2) : 1;
+      const w = cv.clientWidth*dpr|0, h = cv.clientHeight*dpr|0;
+      if(cv.width!==w||cv.height!==h){ cv.width=w; cv.height=h; trace=[]; }
+      ctx.clearRect(0,0,w,h);
+      u = lerp(u, uTarget, .06);
+      const terms = 1 + Math.round(u*23);          // 1..24 odd harmonics
+      const T = t*(prefersReduced ? .25 : 1.15);
+      const narrow = cv.clientWidth < 760;
+      const R = Math.min(w,h)*(narrow ? .17 : .16);
+      let x = w*(narrow ? .30 : .27), y = h*.44;
+      // baseline axis
+      ctx.lineWidth = dpr;
+      ctx.strokeStyle = ink(.08);
+      ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(w,y); ctx.stroke();
+      // the epicycle chain
+      for(let i=0;i<terms;i++){
+        const k = 2*i+1;
+        const r = R*4/(Math.PI*k);
+        ctx.strokeStyle = ink(.13);
+        ctx.beginPath(); ctx.arc(x,y,r,0,Math.PI*2); ctx.stroke();
+        const nx = x + r*Math.cos(k*T), ny = y + r*Math.sin(k*T);
+        ctx.strokeStyle = ink(.4);
+        ctx.beginPath(); ctx.moveTo(x,y); ctx.lineTo(nx,ny); ctx.stroke();
+        x = nx; y = ny;
+      }
+      // pen tip
+      ctx.fillStyle = '#eceae3';
+      ctx.beginPath(); ctx.arc(x,y,2.2*dpr,0,Math.PI*2); ctx.fill();
+      // traced signal, scrolling right
+      trace.unshift(y);
+      const maxTrace = Math.floor(w*.4);
+      if(trace.length > maxTrace) trace.length = maxTrace;
+      const x0 = w*(narrow ? .62 : .56);
+      ctx.strokeStyle = 'rgba(236,234,227,.85)';
+      ctx.lineWidth = 1.4*dpr;
+      ctx.beginPath();
+      for(let i=0;i<trace.length;i++){ i ? ctx.lineTo(x0+i, trace[i]) : ctx.moveTo(x0, trace[0]); }
+      ctx.stroke();
+      // pen → wave connector
+      ctx.lineWidth = dpr;
+      ctx.strokeStyle = ink(.3);
+      ctx.setLineDash([4*dpr, 4*dpr]);
+      ctx.beginPath(); ctx.moveTo(x,y); ctx.lineTo(x0, trace[0]); ctx.stroke();
+      ctx.setLineDash([]);
+      roN.textContent = terms;
+      roK.textContent = 2*terms-1;
+      roT.textContent = (t%100).toFixed(2);
+      return 0;
+    }
+  };
+}
+onNear($('#geometry'), ()=>{ systems.fourier = createFourier(); });
+
+/* ============================================================
+   DRAG ENGINE — shared by 915 widgets and journey-builder nodes
+   ============================================================ */
+function makeDraggable(el, area, onMove){
+  const bar = el.querySelector('.widget__bar') || el;
+  let sx=0, sy=0, ox=0, oy=0, dragging=false;
+  bar.addEventListener('pointerdown', e=>{
+    if(e.button!==undefined && e.button!==0) return;
+    dragging = true;
+    el.classList.add('is-drag');
+    el.style.zIndex = (makeDraggable.z = (makeDraggable.z||10)+1);
+    sx=e.clientX; sy=e.clientY;
+    ox=el.offsetLeft; oy=el.offsetTop;
+    bar.setPointerCapture(e.pointerId);
+    e.preventDefault();
+  });
+  bar.addEventListener('pointermove', e=>{
+    if(!dragging) return;
+    const maxX = area.clientWidth - el.offsetWidth;
+    const maxY = area.clientHeight - el.offsetHeight;
+    el.style.left = Math.min(Math.max(ox + e.clientX-sx, 0), Math.max(maxX,0))+'px';
+    el.style.top  = Math.min(Math.max(oy + e.clientY-sy, 0), Math.max(maxY,0))+'px';
+    if(onMove) onMove();
+  });
+  const end = e=>{ dragging=false; el.classList.remove('is-drag'); };
+  bar.addEventListener('pointerup', end);
+  bar.addEventListener('pointercancel', end);
+}
+
+/* ============================================================
+   FIG. 03-B — 915 workspace: three live draggable widgets
+   ============================================================ */
+const ws = (()=>{
+  const area = $('#ws-area');
+  if(!area) return {frame(){}};
+  let inited=false, visible=false;
+  let niftyCtx, straddleCtx, scalpCtx;
+  // feeds
+  let price=24150, candles=[], cur=null;
+  let ce=182, pe=176, ceH=[], peH=[], sumH=[];
+  let ticks=[]; let lastTick=performance.now(), lastCandle=performance.now(), lastSlow=0;
+  const elN=$('#wg-nifty'), elS=$('#wg-straddle'), elC=$('#wg-scalper');
+
+  function init(){
+    if(inited) return; inited=true;
+    niftyCtx=$('#wc-nifty').getContext('2d');
+    straddleCtx=$('#wc-straddle').getContext('2d');
+    scalpCtx=$('#wc-scalper').getContext('2d');
+    for(let i=0;i<30;i++){
+      const o=price; let h=o,l=o,c=o;
+      for(let j=0;j<8;j++){ c+=(Math.random()-.5)*14; h=Math.max(h,c); l=Math.min(l,c); }
+      candles.push({o,h,l,c}); price=c;
+    }
+    for(let i=0;i<80;i++){ stepStraddle(); ticks.push(price); }
+    area.querySelectorAll('[data-drag]').forEach(w=>makeDraggable(w, area));
+    new IntersectionObserver(([e])=>visible=e.isIntersecting).observe(area);
+    visible=true;
+  }
+  function stepStraddle(){
+    // premiums mean-revert and lean against each other — spot up, CE up / PE down
+    const move = (Math.random()-.5)*3;
+    ce = Math.max(20, ce + move + (182-ce)*.02);
+    pe = Math.max(20, pe - move*.8 + (176-pe)*.02);
+    ceH.push(ce); peH.push(pe); sumH.push(ce+pe);
+    if(ceH.length>90){ ceH.shift(); peH.shift(); sumH.shift(); }
+  }
+  function tick(){
+    price += (Math.random()-.5)*12 + Math.sin(Date.now()/9000)*.6;
+    if(!cur) cur={o:price,h:price,l:price,c:price};
+    cur.c=price; cur.h=Math.max(cur.h,price); cur.l=Math.min(cur.l,price);
+    ticks.push(price); if(ticks.length>140) ticks.shift();
+  }
+  function sizeCanvas(cv){
+    const w=cv.clientWidth, h=cv.clientHeight;
+    if(w&&h&&(cv.width!==w||cv.height!==h)){ cv.width=w; cv.height=h; }
+    return [w,h];
+  }
+  function line(ctx, data, w, h, mn, mx, color, dash){
+    ctx.strokeStyle=color; ctx.lineWidth=1.2;
+    if(dash) ctx.setLineDash([3,3]);
+    ctx.beginPath();
+    data.forEach((v,i)=>{
+      const x=i/(data.length-1)*w, y=h-(v-mn)/(mx-mn)*h;
+      i?ctx.lineTo(x,y):ctx.moveTo(x,y);
+    });
+    ctx.stroke(); ctx.setLineDash([]);
+  }
+  function drawNifty(){
+    const cv=niftyCtx.canvas, [w,h]=sizeCanvas(cv); if(!w) return;
+    niftyCtx.clearRect(0,0,w,h);
+    const all=cur?candles.concat(cur):candles;
+    let mn=Infinity,mx=-Infinity;
+    for(const c of all){ mn=Math.min(mn,c.l); mx=Math.max(mx,c.h); }
+    const pad=(mx-mn)*.15+1; mn-=pad; mx+=pad;
+    const Y=v=>h-(v-mn)/(mx-mn)*h;
+    niftyCtx.strokeStyle='rgba(216,213,204,.07)';
+    for(let i=1;i<3;i++){ const y=h*i/3; niftyCtx.beginPath(); niftyCtx.moveTo(0,y); niftyCtx.lineTo(w,y); niftyCtx.stroke(); }
+    const MAXC=34, cw=w/(MAXC+3);
+    all.slice(-MAXC).forEach((c,i)=>{
+      const x=(i+1)*cw, up=c.c>=c.o;
+      niftyCtx.strokeStyle=niftyCtx.fillStyle=up?'#8ea98a':'#ad7469';
+      niftyCtx.beginPath(); niftyCtx.moveTo(x+cw*.35,Y(c.h)); niftyCtx.lineTo(x+cw*.35,Y(c.l)); niftyCtx.stroke();
+      const y1=Y(Math.max(c.o,c.c)), y2=Y(Math.min(c.o,c.c));
+      niftyCtx.fillRect(x,y1,cw*.7,Math.max(1,y2-y1));
+    });
+    const ly=Y(price);
+    niftyCtx.strokeStyle='rgba(236,234,227,.5)'; niftyCtx.setLineDash([3,4]);
+    niftyCtx.beginPath(); niftyCtx.moveTo(0,ly); niftyCtx.lineTo(w,ly); niftyCtx.stroke(); niftyCtx.setLineDash([]);
+  }
+  function drawStraddle(){
+    const cv=straddleCtx.canvas, [w,h]=sizeCanvas(cv); if(!w||sumH.length<2) return;
+    straddleCtx.clearRect(0,0,w,h);
+    const all=ceH.concat(peH,sumH);
+    const mn=Math.min(...all)*.98, mx=Math.max(...all)*1.02;
+    straddleCtx.strokeStyle='rgba(216,213,204,.07)';
+    for(let i=1;i<3;i++){ const y=h*i/3; straddleCtx.beginPath(); straddleCtx.moveTo(0,y); straddleCtx.lineTo(w,y); straddleCtx.stroke(); }
+    line(straddleCtx, ceH, w,h,mn,mx, '#8ea98a');
+    line(straddleCtx, peH, w,h,mn,mx, '#ad7469');
+    line(straddleCtx, sumH, w,h,mn,mx, 'rgba(236,234,227,.85)', true);
+    straddleCtx.font='8.5px JetBrains Mono, monospace';
+    straddleCtx.fillStyle='#8ea98a'; straddleCtx.fillText('CE '+ce.toFixed(1), 6, 12);
+    straddleCtx.fillStyle='#ad7469'; straddleCtx.fillText('PE '+pe.toFixed(1), 6, 24);
+  }
+  function drawScalper(){
+    const cv=scalpCtx.canvas, [w,h]=sizeCanvas(cv); if(!w||ticks.length<2) return;
+    scalpCtx.clearRect(0,0,w,h);
+    const mn=Math.min(...ticks), mx=Math.max(...ticks);
+    const pad=(mx-mn)*.1+.5;
+    line(scalpCtx, ticks, w,h, mn-pad, mx+pad, 'rgba(236,234,227,.8)');
+    // last tick marker
+    const up = ticks[ticks.length-1]>=ticks[ticks.length-2];
+    scalpCtx.fillStyle=up?'#8ea98a':'#ad7469';
+    const ly=h-(ticks[ticks.length-1]-(mn-pad))/((mx+pad)-(mn-pad))*h;
+    scalpCtx.fillRect(w-4, ly-1.5, 4, 3);
+  }
+  onNear(area, init, '60%');
+  return {
+    frame(){
+      if(!inited||!visible||document.hidden) return;
+      const now=performance.now();
+      const step=1000/Math.max(PERF.s.ticksPerSec,6);
+      while(now-lastTick>step){ lastTick+=step; tick(); }
+      if(now-lastCandle>1000){ lastCandle=now; if(cur){ candles.push(cur); if(candles.length>60)candles.shift(); cur=null; } }
+      if(now-lastSlow>240){ lastSlow=now; stepStraddle();
+        elN.textContent=price.toFixed(1);
+        elS.textContent=(ce+pe).toFixed(1);
+        const d=ticks[ticks.length-1]-ticks[0];
+        elC.textContent=(d>=0?'+':'')+d.toFixed(1);
+        elC.className=d>=0?'up':'down';
+      }
+      drawNifty(); drawStraddle(); drawScalper();
+    }
+  };
+})();
+
+/* ============================================================
+   FIG. 03-C — journey builder: nodes + live bezier edges + pulse
+   ============================================================ */
+const flow = (()=>{
+  const root = $('#flow'), svg = $('#flow-svg');
+  if(!root) return {frame(){}};
+  const EDGES = [
+    ['n1','n2','intent'], ['n2','n3','order id'], ['n3','n4','200 OK'],
+    ['n4','n5','delivered'], ['n4','n6','stuck'],
+  ];
+  let inited=false, visible=false, paths={}, pulse, pulseEdge=0, pulseT=0;
+  const node = id => root.querySelector(`[data-node="${id}"]`);
+  function anchors(a,b){
+    const ra=node(a), rb=node(b);
+    return [ra.offsetLeft+ra.offsetWidth, ra.offsetTop+ra.offsetHeight/2,
+            rb.offsetLeft, rb.offsetTop+rb.offsetHeight/2];
+  }
+  function drawEdges(){
+    EDGES.forEach(([a,b,label],i)=>{
+      const [x1,y1,x2,y2] = anchors(a,b);
+      const dx = Math.max(Math.abs(x2-x1)*.5, 36);
+      paths[i].setAttribute('d', `M${x1},${y1} C${x1+dx},${y1} ${x2-dx},${y2} ${x2},${y2}`);
+      const t = svg.querySelector(`[data-lbl="${i}"]`);
+      t.setAttribute('x', (x1+x2)/2 - 18);
+      t.setAttribute('y', (y1+y2)/2 - 7);
+    });
+  }
+  function init(){
+    if(inited) return; inited=true;
+    EDGES.forEach(([a,b,label],i)=>{
+      const p = document.createElementNS('http://www.w3.org/2000/svg','path');
+      svg.appendChild(p); paths[i]=p;
+      const t = document.createElementNS('http://www.w3.org/2000/svg','text');
+      t.setAttribute('data-lbl', i); t.textContent = label;
+      svg.appendChild(t);
+    });
+    pulse = document.createElementNS('http://www.w3.org/2000/svg','circle');
+    pulse.setAttribute('class','pulse'); pulse.setAttribute('r','2.5');
+    svg.appendChild(pulse);
+    // keep every node fully inside the canvas on narrow screens
+    function clampNodes(){
+      root.querySelectorAll('.jb-node').forEach(n=>{
+        if(n.offsetLeft + n.offsetWidth > root.clientWidth)
+          n.style.left = Math.max(4, root.clientWidth - n.offsetWidth - 6)+'px';
+        if(n.offsetTop + n.offsetHeight > root.clientHeight)
+          n.style.top = Math.max(4, root.clientHeight - n.offsetHeight - 6)+'px';
+      });
+      drawEdges();
+    }
+    root.querySelectorAll('.jb-node').forEach(n=>makeDraggable(n, root, drawEdges));
+    addEventListener('resize', clampNodes);
+    clampNodes();
+    new IntersectionObserver(([e])=>visible=e.isIntersecting).observe(root);
+    drawEdges(); visible=true;
+  }
+  onNear(root, init, '60%');
+  return {
+    frame(){
+      if(!inited||!visible||document.hidden||prefersReduced) return;
+      // a request packet walking the happy path: trigger→input→http→switch→display
+      pulseT += .012;
+      if(pulseT>=1){ pulseT=0; pulseEdge=(pulseEdge+1)%4; }
+      const p = paths[pulseEdge];
+      const len = p.getTotalLength();
+      if(len>0){
+        const pt = p.getPointAtLength(pulseT*len);
+        pulse.setAttribute('cx',pt.x); pulse.setAttribute('cy',pt.y);
+      }
+    }
+  };
+})();
+
+/* ---------------- master render loop ---------------- */
+(function raf(){
+  requestAnimationFrame(raf);
+  if(document.hidden) return;
+  const t = performance.now()/1000;
+  mouse.sx = lerp(mouse.sx, mouse.x, .06);
+  mouse.sy = lerp(mouse.sy, mouse.y, .06);
+  let calls = 0;
+  for(const k in systems){ const s=systems[k]; if(s) calls += s.render(t)||0; }
+  ws.frame();
+  flow.frame();
+  PERF.frame();
+  HUD.frame(calls);
+})();
+
+/* ============================================================
+   SCROLL CHOREOGRAPHY — decorative; degrades gracefully
+   ============================================================ */
+if(hasGsap && !prefersReduced){
+  gsap.to('.hero__name',{ yPercent:35, opacity:0, ease:'none',
+    scrollTrigger:{trigger:'.hero', start:'top top', end:'bottom top', scrub:true}});
+  gsap.to('.hero__center',{ y:-60, opacity:0, ease:'none',
+    scrollTrigger:{trigger:'.hero', start:'top top', end:'60% top', scrub:true}});
+  document.querySelectorAll('.sec-title').forEach(el=>{
+    gsap.from(el,{y:70, opacity:0, duration:1.1, ease:'power4.out',
+      scrollTrigger:{trigger:el, start:'top 85%'}});
+  });
+  document.querySelectorAll('.geo-block, .proj, .spec__row, .proof__grid > div, .aiwf__panel, .aiwf__pipeline').forEach(el=>{
+    gsap.from(el,{y:50, opacity:0, duration:1, ease:'power3.out',
+      scrollTrigger:{trigger:el, start:'top 82%'}});
+  });
+  gsap.to('#journey-progress',{ scaleY:1, ease:'none',
+    scrollTrigger:{trigger:'.journey__list', start:'top 70%', end:'bottom 65%', scrub:.5}});
+  document.querySelectorAll('.j-item').forEach(el=>{
+    gsap.from(el,{y:60, opacity:0, duration:1, ease:'power3.out',
+      scrollTrigger:{trigger:el, start:'top 82%'}});
+  });
+  gsap.from('.footer__name span',{ yPercent:105, duration:1.1, stagger:.06, ease:'power4.out',
+    scrollTrigger:{trigger:'footer', start:'top 45%'}});
+} else {
+  const jp = $('#journey-progress'); if(jp) jp.style.transform='scaleY(1)';
+}
+
+/* ============================================================
+   FIG. 03-A — the webview cold-start race
+   ============================================================ */
+(()=>{
+  const btn = $('#race-btn');
+  if(!btn) return;
+  const lanes = [
+    {screen:$('#race-a'), ms:$('#race-a-ms'), dur:1800},
+    {screen:$('#race-b'), ms:$('#race-b-ms'), dur:100},
+  ];
+  let running = false;
+  btn.addEventListener('click', ()=>{
+    if(running) return; running = true;
+    btn.textContent = '… running';
+    lanes.forEach(l=>{ l.screen.classList.remove('is-done'); l.screen.classList.add('is-loading'); l.ms.textContent='0'; });
+    const t0 = performance.now();
+    let doneCount = 0;
+    (function step(){
+      const el = performance.now()-t0;
+      lanes.forEach(l=>{
+        if(el < l.dur){ l.ms.textContent = Math.round(el); }
+        else if(l.screen.classList.contains('is-loading')){
+          l.ms.textContent = l.dur + (Math.random()*12|0);
+          l.screen.classList.remove('is-loading');
+          l.screen.classList.add('is-done');
+          doneCount++;
+        }
+      });
+      if(doneCount < lanes.length) requestAnimationFrame(step);
+      else { running=false; btn.textContent='▸ Run again'; }
+    })();
+  });
+})();
+
+/* ============================================================
+   TERMINAL — press ~ (or the footer link)
+   ============================================================ */
+const term = (()=>{
+  const root=$('#terminal'), body=$('#term-body'), input=$('#term-in');
+  const print=(txt,cls='')=>{ const s=document.createElement('span'); if(cls)s.className=cls; s.textContent=txt+'\n'; body.appendChild(s); body.scrollTop=body.scrollHeight; };
+  const EXP = [
+    '2025—now   Keychain      frontend — building Keychain OS (ERP)',
+    '2025       915.Trade     SDE-2 — F&O widget terminal, 0→1 (by Groww)',
+    '2023—25    Groww SDE-1   support chatbot (5M+ convos) · Journey Builder',
+    '           webview P90 1.8s → 100ms via native patch',
+    '2022—23    Groww intern  voice tickets (20% of volume) · help revamp',
+    '2019—23    IET DAVV      B.E. — e-cell tech head, college websites',
+  ];
+  const CMDS = {
+    help(){ print('commands:','dim'); print('  whoami · experience · projects · stack · skills · contact\n  open <linkedin|github|thebrain|mail>\n  perf · dither · debug · sudo hire-jayesh · clear · exit'); },
+    whoami(){ print('Jayesh Bhade — fullstack engineer, weighted to the front.\nReal-time trading UIs · sub-100ms budgets · 0→1 ×4.'); },
+    experience(){ EXP.forEach(l=>print(l)); },
+    projects(){
+      print('TheBrain (MNEMO) — personal memory OS','ok');
+      print('  capture <400ms ack · async encoder · heat-tiered storage\n  4 retrieval doorways over one Postgres · privacy fence\n  github.com/Jaybhade/TheBrain','dim');
+      print('915.trade — F&O charting platform (Groww)','ok');
+      print('Support platform — chatbot + Journey Builder, 5M+ convos (Groww)','ok');
+      print('Keychain OS — ERP for manufacturers (current)','ok');
+    },
+    stack(){ print('ts · js · react · next · node · nest · react-native/webview\npostgres+pgvector · websockets · zustand/redux · turborepo\ncanvas & webgl · react flow · glsl','dim'); },
+    skills(){
+      print('TheBrain /.claude/skills —','ok');
+      print('  /pm /architect /security-issue /spike-issue\n  /batch-github-issues /preflight /fix-issue /ship\n  /test-doctor /adr /dev','dim');
+      print('adapted from davidondrej/skills —','ok');
+      print('  /grill-me /brain-to-docs /handoff /delegating-to-agents\n  /agent-self-scheduling /deep-research /effective-agent-skills','dim');
+    },
+    contact(){ print('email     jayeshjibhade@gmail.com\nlinkedin  linkedin.com/in/jayeshbhade\ngithub    github.com/Jaybhade'); },
+    perf(){ print(`tier      ${PERF.s.label}\ngpu       ${PERF.gpu}\ncores     ${PERF.cores} · mem ~${PERF.mem}GB\nparticles ${PERF.s.particles.toLocaleString()} · post-fx ${PERF.s.post?'on':'off'}\nfps       ${$('#ph-fps').textContent} · frame ${$('#ph-ms').textContent}ms`); },
+    dither(){ toggleDither(); print('dither: '+(ditherOn?'on':'off'),'ok'); },
+    debug(){ toggleDebug(); print('debug overlay: '+(document.body.classList.contains('debug')?'on':'off'),'ok'); },
+    clear(){ body.innerHTML=''; },
+    exit(){ close(); },
+  };
+  function open(){ root.hidden=false; input.focus(); if(!body.childNodes.length){ print('jayesh@portfolio — type `help`','dim'); } }
+  function close(){ root.hidden=true; input.blur(); }
+  function exec(raw){
+    const line = raw.trim();
+    print('jayesh@portfolio:~$ '+line,'dim');
+    if(!line) return;
+    const [cmd, ...args] = line.toLowerCase().split(/\s+/);
+    if(cmd==='open'){
+      const urls = {linkedin:'https://linkedin.com/in/jayeshbhade', github:'https://github.com/Jaybhade', thebrain:'https://github.com/Jaybhade/TheBrain', mail:'mailto:jayeshjibhade@gmail.com'};
+      const u = urls[args[0]];
+      if(u){ print('opening '+args[0]+'…','ok'); window.open(u,'_blank'); } else print('open: unknown target — try linkedin | github | thebrain | mail');
+      return;
+    }
+    if(cmd==='sudo'){
+      if(args.join(' ')==='hire-jayesh'){
+        print('[sudo] password for recruiter: ********','dim');
+        print('Access granted. Drafting offer…','ok');
+        setTimeout(()=>window.open('mailto:jayeshjibhade@gmail.com?subject=Let%27s%20talk','_blank'), 700);
+      } else print('recruiter is not in the sudoers file. This incident will be reported.');
+      return;
+    }
+    if(cmd==='cat' && args[0]==='journey.md'){ CMDS.experience(); return; }
+    if(cmd==='jayesh' && args[0]==='--experience'){ CMDS.experience(); return; }
+    if(cmd==='ls'){ print('journey.md  projects/  stack.txt  .secrets(nice try)','dim'); return; }
+    (CMDS[cmd] || (()=>print(`command not found: ${cmd} — try 'help'`)))();
+  }
+  input.addEventListener('keydown', e=>{
+    if(e.key==='Enter'){ exec(input.value); input.value=''; }
+    if(e.key==='Escape') close();
+  });
+  $('#term-close').addEventListener('click', close);
+  $('#term-open').addEventListener('click', e=>{ e.preventDefault(); open(); });
+  addEventListener('keydown', e=>{
+    if((e.key==='`'||e.key==='~') && e.target.tagName!=='INPUT' && e.target.tagName!=='TEXTAREA'){
+      e.preventDefault(); root.hidden ? open() : close();
+    }
+  });
+  return {open};
+})();
+
+/* ============================================================
+   DITHER MODE + DEBUG MODE (Konami: ↑↑↓↓←→←→BA)
+   ============================================================ */
+let ditherOn = false;
+function toggleDither(){
+  ditherOn = !ditherOn;
+  [systems.hero, systems.footer].forEach(f=>{ if(f) f.uniforms.uDither.value = ditherOn?1:0; });
+  const t = $('#dither-toggle'); if(t) t.textContent = 'Dither: '+(ditherOn?'on':'off');
+}
+$('#dither-toggle').addEventListener('click', e=>{ e.preventDefault(); toggleDither(); });
+
+function toggleDebug(){
+  document.body.classList.toggle('debug');
+  console.info('[debug]', document.body.classList.contains('debug')?'on — sections outlined, HUD expanded':'off');
+}
+(()=>{
+  const SEQ = ['ArrowUp','ArrowUp','ArrowDown','ArrowDown','ArrowLeft','ArrowRight','ArrowLeft','ArrowRight','b','a'];
+  let i = 0;
+  addEventListener('keydown', e=>{
+    if(e.target.tagName==='INPUT') return;
+    i = (e.key===SEQ[i]) ? i+1 : (e.key===SEQ[0] ? 1 : 0);
+    if(i===SEQ.length){ i=0; toggleDebug(); }
+  });
+})();
+
+/* ---------------- console banner (hello, devtools) ---------------- */
+console.log(
+  '%cJAYESH BHADE%c\nfullstack engineer · real-time systems\n\n' +
+  'You opened devtools — we should talk.\n' +
+  'mail   jayeshjibhade@gmail.com\n' +
+  'gh     github.com/Jaybhade\n' +
+  'in     linkedin.com/in/jayeshbhade\n\n' +
+  'Try: press ~ for a terminal · Konami code for debug mode',
+  'font-size:24px;font-weight:bold;color:#eceae3;background:#0b0b0a;padding:8px 16px;border-radius:4px',
+  'color:#827f77;font-family:monospace;font-size:12px'
+);
+
+/* ============================================================
+   PRELOADER — works with or without GSAP
+   ============================================================ */
+(()=>{
+  const loader = $('#loader'), pct = $('#loader-pct');
+  document.documentElement.style.overflow='hidden';
+  const done = ()=>{
+    document.documentElement.style.overflow='';
+    if(hasGsap && !prefersReduced){
+      gsap.to(loader,{yPercent:-100, duration:.9, ease:'power4.inOut',
+        onComplete(){ loader.style.display='none'; ScrollTrigger.refresh(); }});
+      gsap.from('.hero__center > *',{y:30, opacity:0, duration:1, stagger:.12, ease:'power3.out', delay:.35});
+      gsap.from('.hero__name',{yPercent:20, opacity:0, duration:1.4, ease:'power4.out', delay:.45});
+      gsap.from('nav',{y:-24, opacity:0, duration:.8, ease:'power3.out', delay:.6});
+      gsap.from('.hero__bottom, .perf-hud',{opacity:0, duration:1, delay:.9});
+    } else {
+      loader.style.transition='transform .8s cubic-bezier(.76,0,.24,1)';
+      loader.style.transform='translateY(-100%)';
+      setTimeout(()=>loader.style.display='none', 850);
+    }
+  };
+  const dur = prefersReduced ? 300 : 1500;
+  const t0 = performance.now();
+  (function tick(now){
+    const u = clamp01((now-t0)/dur);
+    pct.textContent = Math.round((1-Math.pow(1-u,3))*100);
+    if(u<1) requestAnimationFrame(tick); else done();
+  })(t0);
+})();
+</script>
+</body>
+</html>
